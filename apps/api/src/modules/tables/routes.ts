@@ -74,10 +74,12 @@ tableRoutes.post('/tables/:id/transfer', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, transferSchema);
 
-  const comanda = await db.orm.public.Comanda
-    .where({ tableId: id })
-    .where((comanda) => comanda.status.neq('CLOSED'))
-    .first();
+  const comanda = await db
+    .selectFrom('Comanda')
+    .selectAll()
+    .where('tableId', '=', id)
+    .where('status', '!=', 'CLOSED')
+    .executeTakeFirst();
   if (!comanda) throw conflict('Mesa não possui comanda em aberto');
 
   const transfer = await transferComanda(comanda.id, body.toTableId);

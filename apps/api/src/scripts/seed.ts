@@ -8,25 +8,43 @@ import { db } from '../prisma/db';
  */
 
 async function ensureUser(username: string, password: string, role: 'ADMIN' | 'WAITER' | 'CASHIER' | 'CHEF') {
-  const existing = await db.orm.public.User.where({ username }).first();
+  const existing = await db.selectFrom('User').selectAll().where('username', '=', username).executeTakeFirst();
   if (existing) return null;
-  await db.orm.public.User.create({ username, password: await hashPassword(password), role });
+  await db
+    .insertInto('User')
+    .values({ username, password: await hashPassword(password), role })
+    .execute();
   return username;
 }
 
 async function ensureCategory(name: string) {
-  const existing = await db.orm.public.Category.where({ name }).first();
-  return existing ?? (await db.orm.public.Category.create({ name, active: true }));
+  const existing = await db.selectFrom('Category').selectAll().where('name', '=', name).executeTakeFirst();
+  if (existing) return existing;
+  return db
+    .insertInto('Category')
+    .values({ name, active: true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 async function ensureProduct(name: string, price: number, categoryId: string) {
-  const existing = await db.orm.public.Product.where({ name }).first();
-  return existing ?? (await db.orm.public.Product.create({ name, price: price.toFixed(2), categoryId, active: true }));
+  const existing = await db.selectFrom('Product').selectAll().where('name', '=', name).executeTakeFirst();
+  if (existing) return existing;
+  return db
+    .insertInto('Product')
+    .values({ name, price: price.toFixed(2), categoryId, active: true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 async function ensureAditional(name: string, price: number) {
-  const existing = await db.orm.public.Aditional.where({ name }).first();
-  return existing ?? (await db.orm.public.Aditional.create({ name, price: price.toFixed(2), active: true }));
+  const existing = await db.selectFrom('Aditional').selectAll().where('name', '=', name).executeTakeFirst();
+  if (existing) return existing;
+  return db
+    .insertInto('Aditional')
+    .values({ name, price: price.toFixed(2), active: true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 async function ensurePrinter(input: {
@@ -35,38 +53,58 @@ async function ensurePrinter(input: {
   columns?: number;
   printsBill?: boolean;
 }) {
-  const existing = await db.orm.public.Printer.where({ name: input.name }).first();
+  const existing = await db.selectFrom('Printer').selectAll().where('name', '=', input.name).executeTakeFirst();
   if (existing) return existing;
 
-  return db.orm.public.Printer.create({
-    name: input.name,
-    address: input.address,
-    transport: 'BLUETOOTH',
-    columns: input.columns ?? 32,
-    codepage: 19,
-    active: true,
-    printsBill: false,
-  });
+  return db
+    .insertInto('Printer')
+    .values({
+      name: input.name,
+      address: input.address,
+      transport: 'BLUETOOTH',
+      columns: input.columns ?? 32,
+      codepage: 19,
+      active: true,
+      printsBill: false,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 async function ensureRoute(input: { printerId: string; productId?: string; categoryId?: string; priority?: number }) {
   const existing = input.productId
-    ? await db.orm.public.PrintRoute.where({ printerId: input.printerId, productId: input.productId }).first()
-    : await db.orm.public.PrintRoute.where({ printerId: input.printerId, categoryId: input.categoryId }).first();
+    ? await db
+        .selectFrom('PrintRoute')
+        .select(['id'])
+        .where('printerId', '=', input.printerId)
+        .where('productId', '=', input.productId)
+        .executeTakeFirst()
+    : await db
+        .selectFrom('PrintRoute')
+        .select(['id'])
+        .where('printerId', '=', input.printerId)
+        .where('categoryId', '=', input.categoryId ?? '')
+        .executeTakeFirst();
   if (existing) return;
 
-  await db.orm.public.PrintRoute.create({
-    printerId: input.printerId,
-    productId: input.productId ?? null,
-    categoryId: input.categoryId ?? null,
-    priority: input.priority ?? 0,
-  });
+  await db
+    .insertInto('PrintRoute')
+    .values({
+      printerId: input.printerId,
+      productId: input.productId ?? null,
+      categoryId: input.categoryId ?? null,
+      priority: input.priority ?? 0,
+    })
+    .execute();
 }
 
 async function ensureTable(number: number, capacity = 4) {
-  const existing = await db.orm.public.Table.where({ number }).first();
+  const existing = await db.selectFrom('Table').select(['id']).where('number', '=', number).executeTakeFirst();
   if (existing) return;
-  await db.orm.public.Table.create({ number, capacity, label: null, status: 'AVAILABLE' });
+  await db
+    .insertInto('Table')
+    .values({ number, capacity, label: null, status: 'AVAILABLE' })
+    .execute();
 }
 
 async function main(): Promise<void> {
@@ -89,7 +127,7 @@ async function main(): Promise<void> {
   const porcoes = await ensureCategory('Porções');
   const bebidas = await ensureCategory('Bebidas');
   const pratos = await ensureCategory('Pratos');
-  await ensureCategory('Sobremesas');
+  const sobremesas = await ensureCategory('Sobremesas');
 
   const products: Record<string, string> = {};
   const productDefs: [string, number, string][] = [
@@ -103,7 +141,7 @@ async function main(): Promise<void> {
     ['Café Expresso', 4.5, bebidas.id],
     ['Parmegiana', 38.9, pratos.id],
     ['Strogonoff', 34.9, pratos.id],
-    ['Pudim', 12.9, await ensureCategory('Sobremesas').then((c) => c.id)],
+    ['Pudim', 12.9, sobremesas.id],
   ];
 
   for (const [name, price, categoryId] of productDefs) {
@@ -121,7 +159,7 @@ async function main(): Promise<void> {
   const bar = await ensurePrinter({ name: 'Bar', address: 'AA:BB:CC:11:22:33' });
 
   if (balcao.printsBill === false) {
-    await db.orm.public.Printer.where({ id: balcao.id }).update({ printsBill: true });
+    await db.updateTable('Printer').set({ printsBill: true }).where('id', '=', balcao.id).execute();
     created.push('printer:Balcão (destino de contas)');
   }
 
@@ -142,11 +180,11 @@ async function main(): Promise<void> {
   console.log(`  criados agora: ${created.length > 0 ? created.join(', ') : '(nenhum — já existia)'}`);
   console.log('  login admin/admin123 — cliente de impressão: impressora/impressora123');
 
-  await db.close();
+  await db.destroy();
 }
 
 main().catch(async (error) => {
   console.error('Falha no seed:', error);
-  await db.close();
+  await db.destroy();
   process.exit(1);
 });
