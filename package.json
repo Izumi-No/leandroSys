@@ -1,0 +1,22 @@
+{
+  "name": "leandroSys",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Comandas e mesas com filas de impressão — monorepo (api, web, desktop)",
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "dev": "pnpm --filter ./apps/api --filter ./apps/web --parallel dev",
+    "dev:desktop": "pnpm --filter ./apps/desktop dev",
+    "dev:all": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter ./apps/api start",
+    "typecheck": "pnpm -r typecheck",
+    "seed": "pnpm --filter ./apps/api seed",
+    "contract:emit": "pnpm --filter ./apps/api contract:emit",
+    "db:update": "pnpm --filter ./apps/api db:update",
+    "docs:build": "for f in docs/diagrams/*.d2; do d2 \"$f\" \"${f%.d2}.svg\" || exit 1; done"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

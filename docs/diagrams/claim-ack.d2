@@ -1,0 +1,16 @@
+# Sequência: cliente Electron → API → impressora.
+# Gerado em docs/fluxo.md (pnpm docs:build).
+
+direction: right
+
+electron: "Cliente Electron\napps/desktop"
+api: "API — apps/api\nSELECT … FOR UPDATE SKIP LOCKED"
+imp: "Impressora\n(bluetooth)"
+
+electron -> api: "1. claim {printerId, limit}\n(re-enfileira stale > 5 min)"
+api -> electron: "2. jobs[] + data (ESC/POS base64)\nstatus → PRINTING · attempts +1"
+electron -> imp: "3. escreve os bytes"
+imp --> electron: "OK ou erro (papel, desconexão)"
+electron -> api: "4a. ack {success: true} → DONE"
+electron -> api: "4b. ack {success: false}\n→ PENDING | FAILED"
+electron -> api: "vazio → repete em 2s\n(api fora: backoff ± jitter)"

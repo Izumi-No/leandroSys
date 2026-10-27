@@ -1,0 +1,42 @@
+# Arquitetura: daemon printd (Go) dono da fila + Electron como só UI.
+# Gerado em apps/printd/README.md (pnpm docs:build).
+
+direction: down
+
+printd: "apps/printd — daemon em Go (printd)" {
+  server: "API local 127.0.0.1:7411\nX-Printd-Token · /estado · /config\n/dispositivos · /dispositivos/usb · /filas\n/atrelar · /desatrelar"
+  agent: "concentrador (goroutine por fila)\nclaim (com agentId) → transmitir → ack\ndedup · backoff · reconciliação"
+  transporte: "transportes\nrede (TCP 9100)\nBluetooth: socket RFCOMM nativo (AF_BLUETOOTH)\nUSB: termios 8N1 (ttyUSB/ttyACM/by-id) ou /dev/usb/lp*"
+  bluez: "BlueZ sem root\nbluetoothctl · hcitool scan · sdptool (canal)"
+  config: "printd.json (0600)\n~/.config/leandrosys\ntoken · agente (machine-id + hostname)\nAPI · usuário/senha · filas atreladas"
+}
+
+desktop: "apps/desktop — Electron (cliente fino)" {
+  main: "main (Node)\ncliente HTTP do daemon\nspawna o printd desanexado se offline"
+  preload: "preload\ncontextBridge → window.leandro"
+  renderer: "renderer (browser)\nconfig 1x · descobrir (BT/USB/rede)\natreler fila · estado · log"
+}
+
+api: "apps/api" {
+  rest: "REST Hono\nauth · comandas · impressoras"
+  vinculo: "POST /printers/:id/attach|detach\nagentId do agente + token"
+  fila: "fila PrintJob\nclaim / ack"
+  escpos: "render ESC/POS\nCP850 · colunas da impressora"
+}
+
+db: "Postgres"
+imp: "Dispositivos locais\nCozinha 1 · Balcão · USB"
+
+desktop.renderer -> desktop.main: "IPC desktop:*"
+desktop.main -> printd.server: "fetch 127.0.0.1 + X-Printd-Token"
+desktop.main -> printd.server: "spawna binário se offline\n(desanexado: sobrevive à UI)"
+
+printd.agent -> api.rest: "fetch (token do printd.json)\nlogin · attach/detach · claim · ack"
+printd.server -> printd.config: "lê e grava"
+printd.bluez -> printd.transporte: "canal RFCOMM + scan de aparelhos"
+printd.agent -> printd.transporte: "bytes ESC/POS"
+printd.transporte -> imp: "TCP 9100 · RFCOMM · USB"
+
+api.vinculo -> db: "grava o agente de cada fila"
+api.escpos -> api.fila: "bytes base64"
+api.fila -> db: "status e attempts"

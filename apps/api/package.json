@@ -1,0 +1,29 @@
+{
+  "name": "@leandrosys/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API de comandas, mesas e fila de impressão (Hono + Prisma 8)",
+  "scripts": {
+    "postinstall": "prisma skills sync || exit 0",
+    "contract:emit": "prisma contract emit",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "seed": "tsx src/scripts/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "db:update": "prisma db update"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@prisma/orm-postgres": "8.0.0-rc.20",
+    "dotenv": "^18.0.9",
+    "hono": "^4.13.13",
+    "iconv-lite": "^0.7.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@prisma/cli-engine": "0.9.0",
+    "@types/node": "^26.6.5",
+    "prisma": "8.0.0-rc.27",
+    "tsx": "^4.23.15"
+  }
+}

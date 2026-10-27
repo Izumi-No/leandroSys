@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>leandroSys — Impressão</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>
+        leandroSys <span>impressão</span>
+      </h1>
+      <p class="badges">
+        <span id="daemon" class="badge">verificando…</span>
+        <span id="api-status" class="badge">—</span>
+        <span id="concentrador" class="badge">—</span>
+      </p>
+    </header>
+
+    <main>
+      <section id="offline" hidden>
+        <h2>Daemon offline</h2>
+        <p class="ajuda">
+          O daemon <code>printd</code> é quem drena a fila e transmite para as
+          impressoras. Ele não está respondendo no endereço local (ver em
+          <em>Daemon</em> abaixo).
+        </p>
+        <button id="iniciar-daemon" type="button">Iniciar daemon</button>
+      </section>
+
+      <section id="config" hidden>
+        <h2>Conectar à API (digite uma vez)</h2>
+        <p class="ajuda">
+          Use o usuário do agente (<code>impressora</code>) e a senha definidos
+          no admin. Não existe código de pareamento: o printd se identifica e
+          reivindica as filas que você atrelar abaixo.
+        </p>
+        <form id="config-form" class="grade">
+          <label>
+            API
+            <input name="apiUrl" required placeholder="http://localhost:3000/api" />
+          </label>
+          <label>
+            Usuário
+            <input name="usuario" required autocomplete="username" />
+          </label>
+          <label>
+            Senha
+            <input name="senha" type="password" required autocomplete="current-password" />
+          </label>
+          <button type="submit">Salvar e conectar</button>
+        </form>
+        <p id="config-erro" class="erro" role="alert"></p>
+      </section>
+
+      <section id="dispositivos-secao" hidden>
+        <h2>Impressoras disponíveis nesta máquina</h2>
+        <p class="ajuda">
+          Escolha um dispositivo descoberto e atrele uma fila cadastrada no
+          admin. A fila continua sendo criada lá; aqui só ligamos o hardware.
+        </p>
+
+        <div class="transportes">
+          <article class="transporte-card">
+            <h3>Bluetooth</h3>
+            <p class="ajuda">Impressoras pareadas no sistema e aparelhos por perto.</p>
+            <button id="buscar-bt" type="button">Buscar aparelhos (~10s)</button>
+            <ul id="dispositivos-bt" class="dispositivos"></ul>
+          </article>
+
+          <article class="transporte-card">
+            <h3>USB</h3>
+            <p class="ajuda">
+              Portas seriais (<code>ttyUSB</code>/<code>ttyACM</code>) e
+              impressoras <code>/dev/usb/lp*</code>.
+            </p>
+            <button id="buscar-usb" type="button">Atualizar USB</button>
+            <ul id="dispositivos-usb" class="dispositivos"></ul>
+          </article>
+
+          <article class="transporte-card">
+            <h3>Rede (TCP/IP)</h3>
+            <p class="ajuda">Porta padrão 9100 (ESC/POS).</p>
+            <form id="rede-form" class="rede-form">
+              <label>
+                Host / IP
+                <input name="host" required placeholder="192.168.0.10" />
+              </label>
+              <label>
+                Porta
+                <input name="porta" inputmode="numeric" value="9100" />
+              </label>
+              <button type="submit">Escolher fila</button>
+            </form>
+          </article>
+        </div>
+        <p id="dispositivos-erro" class="erro" role="alert"></p>
+      </section>
+
+      <section id="atrelar-secao" hidden>
+        <h2>Atrelar fila ao dispositivo</h2>
+        <p id="atrelar-dispositivo" class="ajuda"></p>
+
+        <div id="baud-wrap" class="baud-wrap" hidden>
+          <label>
+            Velocidade da serial (8N1)
+            <select id="atrelar-baud">
+              <option value="9600" selected>9600 baud</option>
+              <option value="19200">19200 baud</option>
+              <option value="38400">38400 baud</option>
+              <option value="57600">57600 baud</option>
+              <option value="115200">115200 baud</option>
+              <option value="4800">4800 baud</option>
+              <option value="2400">2400 baud</option>
+              <option value="1200">1200 baud</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="filas-lista" class="filas-lista"></div>
+        <p id="atrelar-erro" class="erro" role="alert"></p>
+        <div class="acoes-painel">
+          <button id="confirmar-atrelar" type="button">Atrelar fila</button>
+          <button id="cancelar-atrelar" type="button" class="secundario">Cancelar</button>
+        </div>
+      </section>
+
+      <section id="atreladas-secao" hidden>
+        <h2>Filas atreladas nesta máquina</h2>
+        <ul id="impressoras"></ul>
+        <p id="vazio" class="ajuda">Nenhuma fila atrelada ainda.</p>
+      </section>
+
+      <section>
+        <h2>Daemon</h2>
+        <dl>
+          <dt>Endereço</dt>
+          <dd><code id="daemon-endereco">127.0.0.1:7411</code></dd>
+          <dt>Agente</dt>
+          <dd><span id="agente-nome">—</span> · <code id="agente-id">—</code></dd>
+          <dt>Versões</dt>
+          <dd><code id="versoes">—</code></dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <ul id="log" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

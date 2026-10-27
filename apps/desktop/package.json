@@ -1,0 +1,19 @@
+{
+  "name": "@leandrosys/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "UI Electron do leandroSys — cliente fino do daemon printd (que é quem drena a fila e transmite)",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "pnpm --filter @leandrosys/printd build && pnpm build && electron .",
+    "start": "pnpm build && electron .",
+    "smoke": "pnpm --filter @leandrosys/printd smoke",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^45.0.0",
+    "esbuild": "^0.28.2"
+  }
+}

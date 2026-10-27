@@ -1,0 +1,39 @@
+# Fluxo de ponta a ponta: mesa → comanda → produção → conta.
+# Gerado em docs/fluxo.md (pnpm docs:build).
+
+direction: down
+
+classes: {
+  web: { style.fill: "#e8f1fe"; style.stroke: "#3b82f6" }
+  api: { style.fill: "#f4f4f5"; style.stroke: "#71717a" }
+  edge: { style.fill: "#e8fbf0"; style.stroke: "#16a34a" }
+}
+
+p1: "1 · web\nOcupar mesa\nPOST /tables/:id/take\n→ Comanda OPEN · mesa OCCUPIED" { class: web }
+p2: "2 · web\nLançar itens\nPOST /comandas/:id/items\nquantity · note · aditionals" { class: web }
+p3: "3 · web\nEnviar para produção\nPOST /comandas/:id/send" { class: web }
+p4: "4 · api\nResolve as rotas\nproduto vence categoria · priority\n1 PrintJob por impressora (PENDING)" { class: api }
+p5: "5 · desktop\nclaim → imprime → ack\nPOST /print-jobs/claim\n+ POST /print-jobs/:id/ack" { class: edge }
+p6: "6 · web\nProgresso do prato\nPATCH /comandas/:id/items/:itemId\nIN_PREP | READY | SERVED" { class: web }
+p7: "7 · web\nPedir a conta\nPOST /comandas/:id/checkout\nkind BILL → impressora printsBill · PAYING" { class: web }
+p8: "8 · web\nReceber e fechar\nPOST /comandas/:id/close {paymentMethod}\n→ CLOSED · mesa AVAILABLE" { class: web }
+
+p1 -> p2: "total recalculado"
+p2 -> p3: "só itens PENDING"
+p3 -> p4: "agrupa por impressora"
+p4 -> p5: "bytes ESC/POS em base64"
+p5 -> p6: "item SENT → IN_PREP"
+p6 -> p7: "pratos servidos"
+p7 -> p8: "conta paga"
+
+nota_rota: "item sem rota → fica PENDING\ne volta em unrouted[]\n(nada é impresso)" {
+  shape: text
+  style.font-color: "#b45309"
+}
+p4 -> nota_rota: { style.stroke-dash: 2; style.opacity: 0.35 }
+
+nota_reimpress: "reimpressão é sempre explícita\nPOST /comandas/:id/items/:itemId/reprint" {
+  shape: text
+  style.font-color: "#b45309"
+}
+p5 -> nota_reimpress: { style.stroke-dash: 2; style.opacity: 0.35 }

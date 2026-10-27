@@ -1,0 +1,37 @@
+# Ciclo de vida de um PrintJob (fila de impressão).
+# Gerado em docs/fluxo.md (pnpm docs:build).
+
+direction: down
+
+PENDING: "PENDING\nna fila" { shape: oval; style.fill: "#fff6d5" }
+PRINTING: "PRINTING\nclaim feito · attempts +1"
+DONE: "DONE\nack de sucesso" { style.fill: "#d6f7dd" }
+FAILED: "FAILED\n3ª tentativa falhou" { style.fill: "#ffd9d9" }
+CANCELED: "CANCELED\ncancelado por operador" { style.fill: "#eceff1" }
+
+PENDING -> PRINTING: "claim\nFOR UPDATE SKIP LOCKED"
+PRINTING -> DONE: "ack {success: true}"
+PRINTING -> PENDING: "ack {success: false}\ne attempts < 3"
+PRINTING -> FAILED: "ack {success: false}\nna 3ª tentativa"
+PRINTING -> PENDING: "stale > 5 min\ncliente caiu no meio" { style.stroke-dash: 4 }
+PRINTING -> CANCELED: "cancel"
+FAILED -> PENDING: "retry (zera attempts)"
+CANCELED -> PENDING: "retry (zera attempts)"
+
+nota_pend: "ack atrasado chega aqui\n→ 409 'Job não está em impressão'\n(e não transiciona)" {
+  shape: text
+  style.font-color: "#b45309"
+}
+nota_pend -> PENDING: { style.stroke-dash: 2; style.opacity: 0.4 }
+
+nota_done: "ack repetido aqui\n→ 200 {alreadyFinished: true}\n(estado não muda)" {
+  shape: text
+  style.font-color: "#b45309"
+}
+nota_done -> DONE: { style.stroke-dash: 2; style.opacity: 0.4 }
+
+nota_fila: "claim nunca devolve\nFAILED/CANCELED/DONE" {
+  shape: text
+  style.font-color: "#b45309"
+}
+nota_fila -> PENDING: { style.stroke-dash: 2; style.opacity: 0.4 }

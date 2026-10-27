@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 10 não roda scripts de pós-instalação por padrão; estes são necessários.
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - workerd

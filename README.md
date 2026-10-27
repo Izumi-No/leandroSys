@@ -1,0 +1,102 @@
+# leandroSys
+
+Sistema de comandas e mesas com filas de impressão por impressora (ESC/POS), rotas de
+impressão por categoria ou por item, e painel administrativo.
+
+Monorepo gerenciado com **pnpm workspaces**.
+
+## Estrutura
+
+```
+leandroSys/
+├── apps/
+│   ├── api/        # API Hono + Prisma 8 (comandas, mesas, fila de impressão)
+│   ├── web/        # Frontend React + Vite (salão, comandas, administrativo)
+│   ├── printd/     # Daemon Go: dono da fila (claim → transporte → ack) + API local
+│   └── desktop/    # Electron: só UI — cliente fino do printd
+├── packages/
+│   └── shared/     # Tipos, enums e constantes compartilhados
+├── pnpm-workspace.yaml
+└── tsconfig.base.json   # compilerOptions comuns
+```
+
+| Pacote                | Nome                  | O que é |
+| --------------------- | --------------------- | ------- |
+| `apps/api`            | `@leandrosys/api`     | Backend: Hono, Prisma 8, JWT, fila de jobs ESC/POS |
+| `apps/web`            | `@leandrosys/web`     | Vite + React 19 (dev em `http://localhost:5173`, proxy `/api` → `3000`) |
+| `apps/printd`         | `@leandrosys/printd`  | **Daemon em Go**: dono da fila — pareia as impressoras da casa (Bluetooth/rede) e drena todas as filas em paralelo; API local em `127.0.0.1` |
+| `apps/desktop`        | `@leandrosys/desktop` | Electron 45: **só UI do printd** — configuração (1x), pareamento simplificado, estado das impressoras e log |
+| `packages/shared`     | `@leandrosys/shared`  | DTOs e enums espelhados da API (fonte TS direta, sem build) |
+
+## Comandos (na raiz)
+
+```bash
+pnpm install          # instala todos os pacotes e linka o workspace
+
+pnpm dev              # API (3000) + web (5173) em paralelo
+pnpm dev:desktop      # build + Electron
+pnpm dev:all          # tudo junto (API + web + Electron)
+pnpm build            # build de todos os pacotes
+pnpm typecheck        # tsc --noEmit em todos os pacotes
+
+pnpm seed             # dados iniciais (veja tabela abaixo)
+pnpm db:update        # aplica o schema do Prisma
+pnpm contract:emit    # regenera contract.json / contract.d.ts
+```
+
+Por pacote: `pnpm --filter ./apps/api dev`, `pnpm --filter ./apps/web build`, etc.
+
+## Primeira execução
+
+```bash
+pnpm install
+cp apps/api/.env.example apps/api/.env   # DATABASE_URL (dev: porta 5433), JWT_SECRET…
+docker start leandrosys-db               # Postgres dev (container de trabalho)
+pnpm db:update
+pnpm seed
+pnpm dev
+```
+
+Usuários do seed: `admin/admin123`, `garcom/garcom123`, `caixa/caixa123`,
+`cozinha/cozinha123`, `impressora/impressora123` (usado pelo daemon `printd`).
+
+## Documentação
+
+- [`docs/fluxo.md`](docs/fluxo.md) — **fluxo de ponta a ponta**: mesa → comanda → itens →
+  envio → rotas → fila → `claim` → `ack` → conta → fechamento, com garantias, limitações e
+  casos-limite.
+- [`apps/api/README.md`](apps/api/README.md) — API completa: endpoints, autenticação,
+  papéis, contrato de erros e motor de impressão.
+- [`apps/printd/README.md`](apps/printd/README.md) — **daemon de impressão** (Go): dono
+  da fila (`claim` → transporte → `ack`), API local, pareamento simplificado, transportes
+  (rede e Bluetooth por socket RFCOMM nativo) e o smoke E2E.
+- [`apps/desktop/README.md`](apps/desktop/README.md) — **UI da impressão** (Electron):
+  cliente fino do `printd` — sobe o daemon se preciso, configuração única e pareamento
+  com um campo.
+- `apps/api/prisma-8.md` — notas sobre Prisma 8 (contract, `db update`, codecs).
+
+Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG com
+`pnpm docs:build` (requer o [D2](https://d2lang.com) instalado).
+
+## Estado
+
+- **Feito:** API completa (contract + endpoints + fila), o front do `apps/web` — login,
+  salão (ocupar/reservar/transferir/liberar), comandas (lançar, enviar, conta, fechar) e
+  administração (mesas, cardápio, impressoras, rotas, fila e usuários) — e a impressão
+  de ponta a ponta: o **daemon `apps/printd`** (Go) drena todas as filas em paralelo
+  (1 goroutine por impressora, dedup e backoff), pareia com **um campo só** e fala com
+  as impressoras por rede (TCP) ou **Bluetooth RFCOMM via socket nativo do kernel** (sem
+  módulo nativo); o `apps/desktop` é a UI fina que conversa com ele em `127.0.0.1`.
+  Fan-out comprovado por `pnpm --filter @leandrosys/printd smoke` (um pedido → duas vias
+  nas duas cozinhas).
+- **Próximo:** transporte USB, retry/cancel na UI para o operador e testes com hardware
+  real (Bluetooth/rede).
+
+### Frontend (`apps/web`)
+
+- Vite + React 19 + React Router + **Tailwind v4** com tokens de design em
+  `src/styles.css` + componentes **shadcn/ui** (`src/components/ui`, alias `@/*`).
+- Dados via **SWR** (`fetcher` em `src/lib/api.ts`, que também trata o contrato de erros
+  `{ error, code, details }` e o Bearer do JWT em `localStorage`).
+- Rotas: `/login`, `/` (salão), `/comandas`, `/comandas/:id` e `/admin/*` (ADMIN).
+- Comandos: `pnpm --filter ./apps/web dev` (proxy `/api` → 3000), `build`, `typecheck`.
