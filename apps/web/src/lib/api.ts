@@ -1,6 +1,12 @@
-import { API_BASE_PATH, type ApiError } from '@leandrosys/shared';
+import { type ApiError } from '@leandrosys/shared';
 
 const TOKEN_KEY = 'leandrosys.token';
+
+/** URL absoluta da API (sem trailing slash). Dev: `http://localhost:3000/api`. */
+const API_URL =
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (import.meta.env.API_URL as string | undefined) ??
+  'http://localhost:3000/api';
 
 /** Erro HTTP da API: mantém `code`, `status` e `details` do contrato de erros. */
 export class ApiRequestError extends Error {
@@ -45,7 +51,7 @@ export async function api<T>(caminho: string, opcoes: Opcoes = {}): Promise<T> {
 
   let resposta: Response;
   try {
-    resposta = await fetch(`${API_BASE_PATH}${caminho}`, {
+    resposta = await fetch(`${API_URL}${caminho.startsWith('/') ? '' : '/'}${caminho}`, {
       method: opcoes.method ?? 'GET',
       signal: opcoes.signal,
       headers: {

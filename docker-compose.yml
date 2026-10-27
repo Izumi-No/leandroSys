@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - eventstore
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: leandro
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+  eventstore:
+    image: eventstore/eventstore:23.10.0-bionic
+    environment:
+      EVENTSTORE_CLUSTER_SIZE: 1
+      EVENTSTORE_RUN_PROJECTIONS: All
+      EVENTSTORE_START_STANDARD_PROJECTIONS: true
+      EVENTSTORE_ENABLE_EXTERNAL_TCP: true
+      EVENTSTORE_EXT_TCP_PORT: 1113
+      EVENTSTORE_HTTP_PORT: 2113
+    ports:
+      - "2113:2113"
+      - "1113:1113"
+volumes:
+  pg_data:
+    driver: local

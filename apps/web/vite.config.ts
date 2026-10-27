@@ -12,9 +12,5 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Em dev o web fala com a API local pelo proxy (mesma origem).
-    proxy: {
-      '/api': 'http://localhost:3000',
-    },
   },
 });
