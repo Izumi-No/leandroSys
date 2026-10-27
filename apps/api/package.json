@@ -2,28 +2,31 @@
   "name": "@leandrosys/api",
   "version": "1.0.0",
   "private": true,
-  "description": "API de comandas, mesas e fila de impressão (Hono + Prisma 8)",
+  "type": "module",
+  "description": "API de comandas, mesas e fila de impressão (Hono + Kysely + Neon)",
   "scripts": {
-    "postinstall": "prisma skills sync || exit 0",
-    "contract:emit": "prisma contract emit",
+    "build": "tsc",
+    "deploy": "tsc && wrangler deploy",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc --noEmit",
-    "db:update": "prisma db update"
+    "db:ddl": "node scripts/gen-ddl.mjs",
+    "db:ddl:apply": "node scripts/apply-ddl.cjs",
+    "db:ddl:reset": "node scripts/clean-db.cjs && node scripts/apply-ddl.cjs",
+    "db:types": "node scripts/gen-types.cjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "@prisma/orm-postgres": "8.0.0-rc.20",
     "dotenv": "^18.0.9",
     "hono": "^4.13.13",
     "iconv-lite": "^0.7.3",
+    "kysely": "^0.29.7",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@prisma/cli-engine": "0.9.0",
     "@types/node": "^26.6.5",
-    "prisma": "8.0.0-rc.27",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "wrangler": "^4.153.0"
   }
 }

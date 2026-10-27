@@ -1,0 +1,12 @@
+name = "leandrosys-api"
+account_id = "d35d0cbfcb77dbbd6375a69cf896701f"
+main = "./dist/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+CORS_ORIGIN = "https://leandrosys-web.pages.dev"
+
+[build]
+command = "npx tsc"

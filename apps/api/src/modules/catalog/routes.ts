@@ -42,21 +42,24 @@ export const catalogRoutes = new Hono();
 // ---------------------------------------------------------------------------
 
 catalogRoutes.get('/categories', requireAuth, async (c) => {
-  const categories = await db.orm.public.Category
-    .orderBy((category) => category.name.asc())
-    .include('products', (products) =>
-      products
-        .where((product) => product.active.eq(true))
-        .orderBy((product) => product.name.asc()),
-    )
-    .all();
+  const [categories, products] = await Promise.all([
+    db.selectFrom('Category').selectAll().orderBy('name', 'asc').execute(),
+    db.selectFrom('Product').selectAll().where('active', '=', true).orderBy('name', 'asc').execute(),
+  ]);
+
+  const byCategory = new Map<string, typeof products>();
+  for (const product of products) {
+    const list = byCategory.get(product.categoryId) ?? [];
+    list.push(product);
+    byCategory.set(product.categoryId, list);
+  }
 
   return c.json({
     categories: categories.map((category) => ({
       id: category.id,
       name: category.name,
       active: category.active,
-      products: category.products.map((product) => ({
+      products: (byCategory.get(category.id) ?? []).map((product) => ({
         id: product.id,
         name: product.name,
         price: money(product.price),
@@ -69,10 +72,11 @@ catalogRoutes.get('/categories', requireAuth, async (c) => {
 
 catalogRoutes.post('/categories', requireAdmin(), async (c) => {
   const body = await parseBody(c, categorySchema);
-  const category = await db.orm.public.Category.create({
-    name: body.name,
-    active: body.active ?? true,
-  });
+  const category = await db
+    .insertInto('Category')
+    .values({ name: body.name, active: body.active ?? true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
   return c.json({ category: { id: category.id, name: category.name, active: category.active } }, 201);
 });
 
@@ -80,14 +84,19 @@ catalogRoutes.patch('/categories/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, categorySchema.partial());
 
-  const existing = await db.orm.public.Category.first({ id });
+  const existing = await db.selectFrom('Category').selectAll().where('id', '=', id).executeTakeFirst();
   if (!existing) throw notFound('Categoria não encontrada');
 
   const patch: { name?: string; active?: boolean } = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.active !== undefined) patch.active = body.active;
 
-  const updated = await db.orm.public.Category.where({ id }).update(patch);
+  const updated = await db
+    .updateTable('Category')
+    .set(patch)
+    .where('id', '=', id)
+    .returningAll()
+    .executeTakeFirst();
   if (!updated) throw notFound('Categoria não encontrada');
   return c.json({ category: { id: updated.id, name: updated.name, active: updated.active } });
 });
@@ -95,13 +104,13 @@ catalogRoutes.patch('/categories/:id', requireAdmin(), async (c) => {
 catalogRoutes.delete('/categories/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const category = await db.orm.public.Category.first({ id });
+  const category = await db.selectFrom('Category').selectAll().where('id', '=', id).executeTakeFirst();
   if (!category) throw notFound('Categoria não encontrada');
 
-  const products = await db.orm.public.Product.where({ categoryId: id }).all();
+  const products = await db.selectFrom('Product').select(['id']).where('categoryId', '=', id).execute();
   if (products.length > 0) throw conflict('Categoria possui produtos vinculados');
 
-  await db.orm.public.Category.where({ id }).delete();
+  await db.deleteFrom('Category').where('id', '=', id).execute();
   return c.json({ deleted: true });
 });
 
@@ -112,13 +121,21 @@ catalogRoutes.delete('/categories/:id', requireAdmin(), async (c) => {
 catalogRoutes.get('/products', requireAuth, async (c) => {
   const query = parseQuery(c, listQuery);
 
-  const base = query.categoryId
-    ? db.orm.public.Product.where({ categoryId: query.categoryId })
-    : db.orm.public.Product;
+  let productQuery = db
+    .selectFrom('Product')
+    .innerJoin('Category', 'Category.id', 'Product.categoryId')
+    .select([
+      'Product.id as id',
+      'Product.name as name',
+      'Product.price as price',
+      'Product.active as active',
+      'Category.id as categoryId',
+      'Category.name as categoryName',
+    ]);
+  if (query.categoryId) productQuery = productQuery.where('Product.categoryId', '=', query.categoryId);
+  if (query.includeInactive !== 'true') productQuery = productQuery.where('Product.active', '=', true);
 
-  const filtered = query.includeInactive === 'true' ? base : base.where((product) => product.active.eq(true));
-
-  const products = await filtered.orderBy((product) => product.name.asc()).include('category').all();
+  const products = await productQuery.orderBy('Product.name', 'asc').execute();
 
   return c.json({
     products: products.map((product) => ({
@@ -126,7 +143,7 @@ catalogRoutes.get('/products', requireAuth, async (c) => {
       name: product.name,
       price: money(product.price),
       active: product.active,
-      category: { id: product.category.id, name: product.category.name },
+      category: { id: product.categoryId, name: product.categoryName },
     })),
   });
 });
@@ -134,15 +151,19 @@ catalogRoutes.get('/products', requireAuth, async (c) => {
 catalogRoutes.post('/products', requireAdmin(), async (c) => {
   const body = await parseBody(c, productSchema);
 
-  const category = await db.orm.public.Category.first({ id: body.categoryId });
+  const category = await db.selectFrom('Category').selectAll().where('id', '=', body.categoryId).executeTakeFirst();
   if (!category) throw notFound('Categoria não encontrada');
 
-  const product = await db.orm.public.Product.create({
-    name: body.name,
-    price: body.price.toFixed(2),
-    categoryId: category.id,
-    active: body.active ?? true,
-  });
+  const product = await db
+    .insertInto('Product')
+    .values({
+      name: body.name,
+      price: body.price.toFixed(2),
+      categoryId: category.id,
+      active: body.active ?? true,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
   return c.json(
     { product: { id: product.id, name: product.name, price: money(product.price), categoryId: product.categoryId } },
@@ -154,11 +175,11 @@ catalogRoutes.patch('/products/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, productPatchSchema);
 
-  const existing = await db.orm.public.Product.first({ id });
+  const existing = await db.selectFrom('Product').selectAll().where('id', '=', id).executeTakeFirst();
   if (!existing) throw notFound('Produto não encontrado');
 
   if (body.categoryId) {
-    const category = await db.orm.public.Category.first({ id: body.categoryId });
+    const category = await db.selectFrom('Category').selectAll().where('id', '=', body.categoryId).executeTakeFirst();
     if (!category) throw notFound('Categoria não encontrada');
   }
 
@@ -169,7 +190,7 @@ catalogRoutes.patch('/products/:id', requireAdmin(), async (c) => {
   if (body.active !== undefined) patch.active = body.active;
   if (Object.keys(patch).length === 0) throw conflict('Nada para atualizar');
 
-  const updated = await db.orm.public.Product.where({ id }).update(patch);
+  const updated = await db.updateTable('Product').set(patch).where('id', '=', id).returningAll().executeTakeFirst();
   if (!updated) throw notFound('Produto não encontrado');
   return c.json({
     product: { id: updated.id, name: updated.name, price: money(updated.price), active: updated.active },
@@ -179,13 +200,13 @@ catalogRoutes.patch('/products/:id', requireAdmin(), async (c) => {
 catalogRoutes.delete('/products/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const product = await db.orm.public.Product.first({ id });
+  const product = await db.selectFrom('Product').selectAll().where('id', '=', id).executeTakeFirst();
   if (!product) throw notFound('Produto não encontrado');
 
-  const items = await db.orm.public.ComandaItem.where({ productId: id }).all();
+  const items = await db.selectFrom('ComandaItem').select(['id']).where('productId', '=', id).execute();
   if (items.length > 0) throw conflict('Produto possui histórico em comandas; desative-o em vez de apagar');
 
-  await db.orm.public.Product.where({ id }).delete();
+  await db.deleteFrom('Product').where('id', '=', id).execute();
   return c.json({ deleted: true });
 });
 
@@ -194,9 +215,7 @@ catalogRoutes.delete('/products/:id', requireAdmin(), async (c) => {
 // ---------------------------------------------------------------------------
 
 catalogRoutes.get('/aditionals', requireAuth, async (c) => {
-  const aditionals = await db.orm.public.Aditional
-    .orderBy((aditional) => aditional.name.asc())
-    .all();
+  const aditionals = await db.selectFrom('Aditional').selectAll().orderBy('name', 'asc').execute();
 
   return c.json({
     aditionals: aditionals.map((aditional) => ({
@@ -211,11 +230,15 @@ catalogRoutes.get('/aditionals', requireAuth, async (c) => {
 catalogRoutes.post('/aditionals', requireAdmin(), async (c) => {
   const body = await parseBody(c, aditionalSchema);
 
-  const aditional = await db.orm.public.Aditional.create({
-    name: body.name,
-    price: body.price.toFixed(2),
-    active: body.active ?? true,
-  });
+  const aditional = await db
+    .insertInto('Aditional')
+    .values({
+      name: body.name,
+      price: body.price.toFixed(2),
+      active: body.active ?? true,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
   return c.json(
     { aditional: { id: aditional.id, name: aditional.name, price: money(aditional.price) } },
@@ -227,7 +250,7 @@ catalogRoutes.patch('/aditionals/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, aditionalPatchSchema);
 
-  const existing = await db.orm.public.Aditional.first({ id });
+  const existing = await db.selectFrom('Aditional').selectAll().where('id', '=', id).executeTakeFirst();
   if (!existing) throw notFound('Adicional não encontrado');
 
   const patch: { name?: string; price?: string; active?: boolean } = {};
@@ -236,7 +259,7 @@ catalogRoutes.patch('/aditionals/:id', requireAdmin(), async (c) => {
   if (body.active !== undefined) patch.active = body.active;
   if (Object.keys(patch).length === 0) throw conflict('Nada para atualizar');
 
-  const updated = await db.orm.public.Aditional.where({ id }).update(patch);
+  const updated = await db.updateTable('Aditional').set(patch).where('id', '=', id).returningAll().executeTakeFirst();
   if (!updated) throw notFound('Adicional não encontrado');
   return c.json({
     aditional: { id: updated.id, name: updated.name, price: money(updated.price), active: updated.active },
@@ -246,12 +269,12 @@ catalogRoutes.patch('/aditionals/:id', requireAdmin(), async (c) => {
 catalogRoutes.delete('/aditionals/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const aditional = await db.orm.public.Aditional.first({ id });
+  const aditional = await db.selectFrom('Aditional').selectAll().where('id', '=', id).executeTakeFirst();
   if (!aditional) throw notFound('Adicional não encontrado');
 
-  const used = await db.orm.public.ComandaItemAditional.where({ aditionalId: id }).all();
+  const used = await db.selectFrom('ComandaItemAditional').select(['aditionalId']).where('aditionalId', '=', id).execute();
   if (used.length > 0) throw conflict('Adicional já foi usado em comandas; desative-o');
 
-  await db.orm.public.Aditional.where({ id }).delete();
+  await db.deleteFrom('Aditional').where('id', '=', id).execute();
   return c.json({ deleted: true });
 });

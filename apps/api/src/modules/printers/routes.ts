@@ -1,9 +1,11 @@
+import type { Updateable } from 'kysely';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAdmin, requireAuth, requireRole } from '../../lib/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 import { parseBody, parseParams, parseQuery } from '../../lib/validate';
 import { db } from '../../prisma/db';
+import type { Database } from '../../prisma/types';
 import { renderTicketBase64, type TicketDoc } from '../printing/escpos';
 import { enqueueJob } from '../printing/queue';
 import { testTicket } from '../printing/tickets';
@@ -80,11 +82,11 @@ const jobsQuery = z.object({
 type PrinterRow = Awaited<ReturnType<typeof loadPrinters>>[number];
 
 async function loadPrinters() {
-  return db.orm.public.Printer.orderBy((printer) => printer.name.asc()).all();
+  return db.selectFrom('Printer').selectAll().orderBy('name', 'asc').execute();
 }
 
 async function pendingCountsByPrinter(): Promise<Map<string, number>> {
-  const rows = await db.orm.public.PrintJob.where({ status: 'PENDING' }).select('printerId').all();
+  const rows = await db.selectFrom('PrintJob').select(['printerId']).where('status', '=', 'PENDING').execute();
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.printerId, (counts.get(row.printerId) ?? 0) + 1);
   return counts;
@@ -137,16 +139,16 @@ const serializeJob = (job: {
 
 /** Só uma impressora fica como destino de conta por vez. */
 async function applyPrintsBill(printerId: string, value: boolean): Promise<void> {
-  await db.transaction(async (tx) => {
+  await db.transaction().execute(async (tx) => {
     if (value) {
-      const holders = await tx.orm.public.Printer.where((printer) => printer.printsBill.eq(true)).all();
+      const holders = await tx.selectFrom('Printer').select(['id']).where('printsBill', '=', true).execute();
       for (const holder of holders) {
         if (holder.id !== printerId) {
-          await tx.orm.public.Printer.where({ id: holder.id }).update({ printsBill: false });
+          await tx.updateTable('Printer').set({ printsBill: false }).where('id', '=', holder.id).execute();
         }
       }
     }
-    await tx.orm.public.Printer.where({ id: printerId }).update({ printsBill: value });
+    await tx.updateTable('Printer').set({ printsBill: value }).where('id', '=', printerId).execute();
   });
 }
 
@@ -166,15 +168,19 @@ printRoutes.get('/printers', requireAuth, async (c) => {
 printRoutes.post('/printers', requireAdmin(), async (c) => {
   const body = await parseBody(c, createPrinterSchema);
 
-  const printer = await db.orm.public.Printer.create({
-    name: body.name,
-    address: body.address?.trim() ?? '',
-    transport: body.transport ?? 'BLUETOOTH',
-    columns: body.columns ?? 32,
-    codepage: body.codepage ?? 19,
-    active: body.active ?? true,
-    printsBill: false,
-  });
+  const printer = await db
+    .insertInto('Printer')
+    .values({
+      name: body.name,
+      address: body.address?.trim() ?? '',
+      transport: body.transport ?? 'BLUETOOTH',
+      columns: body.columns ?? 32,
+      codepage: body.codepage ?? 19,
+      active: body.active ?? true,
+      printsBill: false,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
   if (body.printsBill) await applyPrintsBill(printer.id, true);
 
@@ -189,7 +195,7 @@ printRoutes.post('/printers/:id/attach', requireRole('ADMIN', 'CHEF'), async (c)
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, attachSchema);
 
-  const printer = await db.orm.public.Printer.first({ id });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
 
   if (printer.agentId && printer.agentId !== body.agentId) {
@@ -197,14 +203,19 @@ printRoutes.post('/printers/:id/attach', requireRole('ADMIN', 'CHEF'), async (c)
   }
 
   const baud = body.transport === 'USB' ? (body.baud ?? 9600) : null;
-  const atualizada = await db.orm.public.Printer.where({ id }).update({
-    address: body.address.trim(),
-    transport: body.transport,
-    baud,
-    agentId: body.agentId,
-    agentName: body.agentName,
-    boundAt: new Date(),
-  });
+  const atualizada = await db
+    .updateTable('Printer')
+    .set({
+      address: body.address.trim(),
+      transport: body.transport,
+      baud,
+      agentId: body.agentId,
+      agentName: body.agentName,
+      boundAt: new Date(),
+    })
+    .where('id', '=', id)
+    .returningAll()
+    .executeTakeFirst();
   if (!atualizada) throw notFound('Impressora não encontrada');
 
   const counts = await pendingCountsByPrinter();
@@ -216,7 +227,7 @@ printRoutes.post('/printers/:id/detach', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, detachSchema);
 
-  const printer = await db.orm.public.Printer.first({ id });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
 
   const usuario = c.get('user');
@@ -227,12 +238,17 @@ printRoutes.post('/printers/:id/detach', requireAuth, async (c) => {
     return c.json({ printer: serializePrinter(printer, 0), alreadyDetached: true });
   }
 
-  const atualizada = await db.orm.public.Printer.where({ id }).update({
-    agentId: null,
-    agentName: null,
-    baud: null,
-    boundAt: null,
-  });
+  const atualizada = await db
+    .updateTable('Printer')
+    .set({
+      agentId: null,
+      agentName: null,
+      baud: null,
+      boundAt: null,
+    })
+    .where('id', '=', id)
+    .returningAll()
+    .executeTakeFirst();
   if (!atualizada) throw notFound('Impressora não encontrada');
 
   const counts = await pendingCountsByPrinter();
@@ -243,17 +259,10 @@ printRoutes.patch('/printers/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, updatePrinterSchema);
 
-  const existing = await db.orm.public.Printer.first({ id });
+  const existing = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!existing) throw notFound('Impressora não encontrada');
 
-  const patch: {
-    name?: string;
-    address?: string;
-    transport?: 'BLUETOOTH' | 'USB' | 'NETWORK';
-    columns?: number;
-    codepage?: number;
-    active?: boolean;
-  } = {};
+  const patch: Updateable<Database['Printer']> = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.address !== undefined) patch.address = body.address.trim();
   if (body.transport !== undefined) patch.transport = body.transport;
@@ -261,8 +270,12 @@ printRoutes.patch('/printers/:id', requireAdmin(), async (c) => {
   if (body.codepage !== undefined) patch.codepage = body.codepage;
   if (body.active !== undefined) patch.active = body.active;
 
-  const printer = Object.keys(patch).length > 0 ? await db.orm.public.Printer.where({ id }).update(patch) : existing;
-  if (!printer) throw notFound('Impressora não encontrada');
+  let printer: PrinterRow = existing;
+  if (Object.keys(patch).length > 0) {
+    const updated = await db.updateTable('Printer').set(patch).where('id', '=', id).returningAll().executeTakeFirst();
+    if (!updated) throw notFound('Impressora não encontrada');
+    printer = updated;
+  }
 
   if (body.printsBill !== undefined) await applyPrintsBill(id, body.printsBill);
 
@@ -273,23 +286,25 @@ printRoutes.patch('/printers/:id', requireAdmin(), async (c) => {
 printRoutes.delete('/printers/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const printer = await db.orm.public.Printer.first({ id });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
 
-  const activeJobs = await db.orm.public.PrintJob
-    .where({ printerId: id })
-    .where((job) => job.status.in(['PENDING', 'PRINTING']))
-    .all();
+  const activeJobs = await db
+    .selectFrom('PrintJob')
+    .select(['id'])
+    .where('printerId', '=', id)
+    .where('status', 'in', ['PENDING', 'PRINTING'])
+    .execute();
   if (activeJobs.length > 0) throw conflict('Impressora tem jobs na fila; espere terminar ou cancele-os');
 
-  await db.orm.public.Printer.where({ id }).delete();
+  await db.deleteFrom('Printer').where('id', '=', id).execute();
   return c.json({ deleted: true });
 });
 
 printRoutes.post('/printers/:id/test', requireRole('ADMIN', 'CHEF'), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const printer = await db.orm.public.Printer.first({ id });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
   if (!printer.active) throw conflict('Impressora está inativa');
 
@@ -307,14 +322,15 @@ printRoutes.get('/printers/:id/queue', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
   const query = parseQuery(c, queueQuery);
 
-  const printer = await db.orm.public.Printer.first({ id });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', id).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
 
-  const base = db.orm.public.PrintJob.where({ printerId: id });
-  const jobs = await (query.status ? base.where({ status: query.status }) : base)
-    .orderBy((job) => job.createdAt.desc())
+  let jobQuery = db.selectFrom('PrintJob').selectAll().where('printerId', '=', id);
+  if (query.status) jobQuery = jobQuery.where('status', '=', query.status);
+  const jobs = await jobQuery
+    .orderBy('createdAt', 'desc')
     .limit(query.limit ?? QUEUE_DEFAULT)
-    .all();
+    .execute();
 
   return c.json({ printer: serializePrinter(printer, 0), jobs: jobs.map(serializeJob) });
 });
@@ -324,76 +340,100 @@ printRoutes.get('/printers/:id/queue', requireAuth, async (c) => {
 // ---------------------------------------------------------------------------
 
 printRoutes.get('/print-routes', requireAuth, async (c) => {
-  const routes = await db.orm.public.PrintRoute
-    .orderBy((route) => route.createdAt.desc())
-    .include('printer')
-    .include('product')
-    .include('category')
-    .all();
+  const [routes, printers, products, categories] = await Promise.all([
+    db.selectFrom('PrintRoute').selectAll().orderBy('createdAt', 'desc').execute(),
+    db.selectFrom('Printer').select(['id', 'name']).execute(),
+    db.selectFrom('Product').select(['id', 'name']).execute(),
+    db.selectFrom('Category').select(['id', 'name']).execute(),
+  ]);
+
+  const printerById = new Map(printers.map((printer) => [printer.id, printer]));
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
 
   return c.json({
-    routes: routes.map((route) => ({
-      id: route.id,
-      priority: route.priority,
-      createdAt: route.createdAt,
-      printer: { id: route.printer.id, name: route.printer.name },
-      target: route.product
-        ? { scope: 'PRODUCT' as const, id: route.product.id, name: route.product.name }
-        : { scope: 'CATEGORY' as const, id: route.category?.id ?? '', name: route.category?.name ?? '' },
-      productId: route.productId,
-      categoryId: route.categoryId,
-    })),
+    routes: routes.map((route) => {
+      const printer = printerById.get(route.printerId);
+      const product = route.productId ? productById.get(route.productId) : undefined;
+      const category = route.categoryId ? categoryById.get(route.categoryId) : undefined;
+      return {
+        id: route.id,
+        priority: route.priority,
+        createdAt: route.createdAt,
+        printer: { id: route.printerId, name: printer?.name ?? '' },
+        target: product
+          ? { scope: 'PRODUCT' as const, id: product.id, name: product.name }
+          : { scope: 'CATEGORY' as const, id: category?.id ?? '', name: category?.name ?? '' },
+        productId: route.productId,
+        categoryId: route.categoryId,
+      };
+    }),
   });
 });
 
 printRoutes.post('/print-routes', requireAdmin(), async (c) => {
   const body = await parseBody(c, createRouteSchema);
 
-  const printer = await db.orm.public.Printer.first({ id: body.printerId });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', body.printerId).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
 
   if (body.productId) {
-    const product = await db.orm.public.Product.first({ id: body.productId });
+    const product = await db.selectFrom('Product').selectAll().where('id', '=', body.productId).executeTakeFirst();
     if (!product) throw notFound('Produto não encontrado');
 
-    const duplicate = await db.orm.public.PrintRoute
-      .where({ printerId: printer.id, productId: body.productId })
-      .first();
+    const duplicate = await db
+      .selectFrom('PrintRoute')
+      .select(['id'])
+      .where('printerId', '=', printer.id)
+      .where('productId', '=', body.productId)
+      .executeTakeFirst();
     if (duplicate) throw conflict('Já existe rota deste produto para esta impressora');
 
-    const route = await db.orm.public.PrintRoute.create({
-      printerId: printer.id,
-      productId: body.productId,
-      categoryId: null,
-      priority: body.priority ?? 0,
-    });
-    return c.json({ route: { id: route.id, productId: route.productId, categoryId: route.categoryId } }, 201);
+    const route = await db
+      .insertInto('PrintRoute')
+      .values({
+        printerId: printer.id,
+        productId: body.productId,
+        categoryId: null,
+        priority: body.priority ?? 0,
+      })
+      .returning(['id', 'productId', 'categoryId'])
+      .executeTakeFirstOrThrow();
+    return c.json({ route }, 201);
   }
 
-  const category = await db.orm.public.Category.first({ id: body.categoryId });
+  const categoryId = body.categoryId!;
+  const category = await db.selectFrom('Category').selectAll().where('id', '=', categoryId).executeTakeFirst();
   if (!category) throw notFound('Categoria não encontrada');
 
-  const duplicate = await db.orm.public.PrintRoute
-    .where({ printerId: printer.id, categoryId: body.categoryId })
-    .first();
+  const duplicate = await db
+    .selectFrom('PrintRoute')
+    .select(['id'])
+    .where('printerId', '=', printer.id)
+    .where('categoryId', '=', categoryId)
+    .executeTakeFirst();
   if (duplicate) throw conflict('Já existe rota desta categoria para esta impressora');
 
-  const route = await db.orm.public.PrintRoute.create({
-    printerId: printer.id,
-    categoryId: body.categoryId,
-    productId: null,
-    priority: body.priority ?? 0,
-  });
-  return c.json({ route: { id: route.id, productId: route.productId, categoryId: route.categoryId } }, 201);
+  const route = await db
+    .insertInto('PrintRoute')
+    .values({
+      printerId: printer.id,
+      categoryId,
+      productId: null,
+      priority: body.priority ?? 0,
+    })
+    .returning(['id', 'productId', 'categoryId'])
+    .executeTakeFirstOrThrow();
+  return c.json({ route }, 201);
 });
 
 printRoutes.delete('/print-routes/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const route = await db.orm.public.PrintRoute.first({ id });
+  const route = await db.selectFrom('PrintRoute').select(['id']).where('id', '=', id).executeTakeFirst();
   if (!route) throw notFound('Rota não encontrada');
 
-  await db.orm.public.PrintRoute.where({ id }).delete();
+  await db.deleteFrom('PrintRoute').where('id', '=', id).execute();
   return c.json({ deleted: true });
 });
 
@@ -404,14 +444,11 @@ printRoutes.delete('/print-routes/:id', requireAdmin(), async (c) => {
 printRoutes.get('/print-jobs', requireAuth, async (c) => {
   const query = parseQuery(c, jobsQuery);
 
-  let base = db.orm.public.PrintJob;
-  if (query.printerId) base = base.where({ printerId: query.printerId });
-  if (query.status) base = base.where({ status: query.status });
+  let jobQuery = db.selectFrom('PrintJob').selectAll();
+  if (query.printerId) jobQuery = jobQuery.where('printerId', '=', query.printerId);
+  if (query.status) jobQuery = jobQuery.where('status', '=', query.status);
 
-  const jobs = await base
-    .orderBy((job) => job.createdAt.desc())
-    .limit(query.limit ?? QUEUE_DEFAULT)
-    .all();
+  const jobs = await jobQuery.orderBy('createdAt', 'desc').limit(query.limit ?? QUEUE_DEFAULT).execute();
 
   return c.json({ jobs: jobs.map(serializeJob) });
 });
@@ -423,7 +460,7 @@ printRoutes.get('/print-jobs', requireAuth, async (c) => {
 printRoutes.post('/print-jobs/claim', requireAuth, async (c) => {
   const body = await parseBody(c, claimSchema);
 
-  const printer = await db.orm.public.Printer.first({ id: body.printerId });
+  const printer = await db.selectFrom('Printer').selectAll().where('id', '=', body.printerId).executeTakeFirst();
   if (!printer) throw notFound('Impressora não encontrada');
   if (!printer.active) throw conflict('Impressora está inativa');
   if (!printer.agentId) throw conflict('Impressora não está atrelada a nenhum agente');
@@ -431,32 +468,34 @@ printRoutes.post('/print-jobs/claim', requireAuth, async (c) => {
 
   const staleCutoff = new Date(Date.now() - STALE_MS);
 
-  const claimed = await db.transaction(async (tx) => {
-    const stale = await tx.orm.public.PrintJob
-      .where({ printerId: printer.id })
-      .where((job) => job.status.eq('PRINTING'))
-      .where((job) => job.claimedAt.lt(staleCutoff))
-      .all();
+  const claimed = await db.transaction().execute(async (tx) => {
+    await tx
+      .updateTable('PrintJob')
+      .set({ status: 'PENDING', claimedAt: null })
+      .where('printerId', '=', printer.id)
+      .where('status', '=', 'PRINTING')
+      .where('claimedAt', '<', staleCutoff)
+      .execute();
 
-    for (const job of stale) {
-      await tx.orm.public.PrintJob.where({ id: job.id }).update({ status: 'PENDING', claimedAt: null });
-    }
-
-    const jobs = await tx.orm.public.PrintJob
-      .where({ printerId: printer.id })
-      .where((job) => job.status.eq('PENDING'))
-      .orderBy((job) => job.createdAt.asc())
+    const jobs = await tx
+      .selectFrom('PrintJob')
+      .selectAll()
+      .where('printerId', '=', printer.id)
+      .where('status', '=', 'PENDING')
+      .orderBy('createdAt', 'asc')
       .limit(body.limit ?? CLAIM_DEFAULT)
-      .forUpdate({ skipLocked: true })
-      .all();
+      .forUpdate()
+      .skipLocked()
+      .execute();
 
     const rows = [];
     for (const job of jobs) {
-      const updated = await tx.orm.public.PrintJob.where({ id: job.id }).update({
-        status: 'PRINTING',
-        attempts: job.attempts + 1,
-        claimedAt: new Date(),
-      });
+      const updated = await tx
+        .updateTable('PrintJob')
+        .set({ status: 'PRINTING', attempts: job.attempts + 1, claimedAt: new Date() })
+        .where('id', '=', job.id)
+        .returningAll()
+        .executeTakeFirst();
       if (updated) rows.push(updated);
     }
     return rows;
@@ -486,7 +525,7 @@ printRoutes.post('/print-jobs/:id/ack', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, ackSchema);
 
-  const job = await db.orm.public.PrintJob.first({ id });
+  const job = await db.selectFrom('PrintJob').selectAll().where('id', '=', id).executeTakeFirst();
   if (!job) throw notFound('Job não encontrado');
   if (job.status === 'DONE' || job.status === 'CANCELED') {
     return c.json({ id, status: job.status, alreadyFinished: true });
@@ -496,26 +535,30 @@ printRoutes.post('/print-jobs/:id/ack', requireAuth, async (c) => {
   if (job.status === 'PENDING') throw conflict('Job não está em impressão');
 
   if (body.success) {
-    await db.orm.public.PrintJob.where({ id }).update({
-      status: 'DONE',
-      finishedAt: new Date(),
-      lastError: null,
-    });
+    await db
+      .updateTable('PrintJob')
+      .set({ status: 'DONE', finishedAt: new Date(), lastError: null })
+      .where('id', '=', id)
+      .execute();
     return c.json({ id, status: 'DONE', attempts: job.attempts });
   }
 
   const lastError = (body.error ?? 'Falha desconhecida').slice(0, 500);
 
   if (job.status === 'FAILED' || job.attempts >= MAX_ATTEMPTS) {
-    await db.orm.public.PrintJob.where({ id }).update({
-      status: 'FAILED',
-      lastError,
-      finishedAt: new Date(),
-    });
+    await db
+      .updateTable('PrintJob')
+      .set({ status: 'FAILED', lastError, finishedAt: new Date() })
+      .where('id', '=', id)
+      .execute();
     return c.json({ id, status: 'FAILED', attempts: job.attempts });
   }
 
-  await db.orm.public.PrintJob.where({ id }).update({ status: 'PENDING', lastError, claimedAt: null });
+  await db
+    .updateTable('PrintJob')
+    .set({ status: 'PENDING', lastError, claimedAt: null })
+    .where('id', '=', id)
+    .execute();
   return c.json({ id, status: 'PENDING', attempts: job.attempts });
 });
 
@@ -523,31 +566,30 @@ printRoutes.post('/print-jobs/:id/ack', requireAuth, async (c) => {
 printRoutes.post('/print-jobs/:id/retry', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const job = await db.orm.public.PrintJob.first({ id });
+  const job = await db.selectFrom('PrintJob').selectAll().where('id', '=', id).executeTakeFirst();
   if (!job) throw notFound('Job não encontrado');
   if (job.status === 'DONE') throw conflict('Job já foi impresso');
   if (job.status === 'PENDING' || job.status === 'PRINTING') throw badRequest('Job já está na fila');
 
-  await db.orm.public.PrintJob.where({ id }).update({
-    status: 'PENDING',
-    attempts: 0,
-    lastError: null,
-    claimedAt: null,
-    finishedAt: null,
-  });
+  await db
+    .updateTable('PrintJob')
+    .set({ status: 'PENDING', attempts: 0, lastError: null, claimedAt: null, finishedAt: null })
+    .where('id', '=', id)
+    .execute();
   return c.json({ id, status: 'PENDING' });
 });
 
 printRoutes.post('/print-jobs/:id/cancel', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const job = await db.orm.public.PrintJob.first({ id });
+  const job = await db.selectFrom('PrintJob').selectAll().where('id', '=', id).executeTakeFirst();
   if (!job) throw notFound('Job não encontrado');
   if (job.status === 'DONE') throw conflict('Job já foi impresso');
 
-  await db.orm.public.PrintJob.where({ id }).update({
-    status: 'CANCELED',
-    finishedAt: new Date(),
-  });
+  await db
+    .updateTable('PrintJob')
+    .set({ status: 'CANCELED', finishedAt: new Date() })
+    .where('id', '=', id)
+    .execute();
   return c.json({ id, status: 'CANCELED' });
 });

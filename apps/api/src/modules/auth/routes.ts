@@ -31,7 +31,7 @@ export const authRoutes = new Hono();
 authRoutes.post('/login', async (c) => {
   const body = await parseBody(c, loginSchema);
 
-  const user = await db.orm.public.User.where({ username: body.username }).first();
+  const user = await db.selectFrom('User').selectAll().where('username', '=', body.username).executeTakeFirst();
   const valid = user ? await verifyPassword(body.password, user.password) : false;
   if (!user || !valid) throw unauthorized('Usuário ou senha inválidos');
 
@@ -44,7 +44,7 @@ authRoutes.post('/login', async (c) => {
 authRoutes.get('/me', requireAuth, async (c) => c.json({ user: c.get('user') }));
 
 authRoutes.get('/users', requireAdmin(), async (c) => {
-  const users = await db.orm.public.User.orderBy((user) => user.username.asc()).all();
+  const users = await db.selectFrom('User').selectAll().orderBy('username', 'asc').execute();
   return c.json({ users: users.map(publicUser) });
 });
 
@@ -52,18 +52,18 @@ authRoutes.post('/users', requireAdmin(), async (c) => {
   const body = await parseBody(c, createUserSchema);
   const password = await hashPassword(body.password);
 
-  const user = await db.orm.public.User.create({
-    username: body.username,
-    password,
-    role: body.role,
-  });
+  const user = await db
+    .insertInto('User')
+    .values({ username: body.username, password, role: body.role })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
   return c.json({ user: publicUser(user) }, 201);
 });
 
 authRoutes.get('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
-  const user = await db.orm.public.User.first({ id });
+  const user = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
   if (!user) throw notFound('Usuário não encontrado');
   return c.json({ user: publicUser(user) });
 });
@@ -81,14 +81,19 @@ authRoutes.patch('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, updateUserSchema);
 
-  const existing = await db.orm.public.User.first({ id });
+  const existing = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
   if (!existing) throw notFound('Usuário não encontrado');
 
   const patch: { password?: string; role?: 'ADMIN' | 'WAITER' | 'CASHIER' | 'CHEF' } = {};
   if (body.password !== undefined) patch.password = await hashPassword(body.password);
   if (body.role !== undefined) patch.role = body.role;
 
-  const user = await db.orm.public.User.where({ id }).update(patch);
+  const user = await db
+    .updateTable('User')
+    .set(patch)
+    .where('id', '=', id)
+    .returningAll()
+    .executeTakeFirst();
   if (!user) throw notFound('Usuário não encontrado');
   return c.json({ user: publicUser(user) });
 });
@@ -96,16 +101,16 @@ authRoutes.patch('/users/:id', requireAdmin(), async (c) => {
 authRoutes.delete('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
 
-  const user = await db.orm.public.User.first({ id });
+  const user = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
   if (!user) throw notFound('Usuário não encontrado');
   if (id === c.get('user').id) throw conflict('Não é possível remover o próprio usuário');
 
   // Não deixa a instância ficar sem nenhum administrador.
   if (user.role === 'ADMIN') {
-    const admins = await db.orm.public.User.where({ role: 'ADMIN' }).all();
+    const admins = await db.selectFrom('User').selectAll().where('role', '=', 'ADMIN').execute();
     if (admins.length <= 1) throw conflict('Não é possível remover o último administrador');
   }
 
-  await db.orm.public.User.where({ id }).delete();
+  await db.deleteFrom('User').where('id', '=', id).execute();
   return c.json({ id, deleted: true });
 });
