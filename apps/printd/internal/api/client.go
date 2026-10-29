@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,14 +20,14 @@ import (
 
 // Job devolvido pelo claim (mesmo contrato da API).
 type Job struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`
-	Status    string `json:"status"`
-	Attempts  int    `json:"attempts"`
-	Data      string `json:"data"` // base64
-	PrinterID string `json:"printerId"`
-	Columns   int    `json:"columns"`
-	Codepage  int    `json:"codepage"`
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Status    string  `json:"status"`
+	Attempts  int     `json:"attempts"`
+	Data      string  `json:"data"` // base64
+	PrinterID string  `json:"printerId"`
+	Columns   IntStr  `json:"columns"`
+	Codepage  IntStr  `json:"codepage"`
 }
 
 type Impressora struct {
@@ -34,15 +35,54 @@ type Impressora struct {
 	Name        string     `json:"name"`
 	Address     string     `json:"address"`
 	Transport   string     `json:"transport"`
-	Columns     int        `json:"columns"`
-	Codepage    int        `json:"codepage"`
-	Active      bool       `json:"active"`
-	PendingJobs int        `json:"pendingJobs"`
-	Baud        int        `json:"baud"`
+	Columns     IntStr     `json:"columns"`
+	Codepage    IntStr     `json:"codepage"`
+	Active      BoolStr    `json:"active"`
+	PendingJobs IntStr     `json:"pendingJobs"`
+	Baud        IntStr     `json:"baud"`
 	AgentID     string     `json:"agentId"`
 	AgentName   string     `json:"agentName"`
-	BoundAt     *time.Time `json:"boundAt"`
+	BoundAt     string     `json:"boundAt"` // timestamp Postgres, não RFC3339
 }
+
+// IntStr aceita tanto número quanto string no JSON (a API devolve columns/
+// codepage/baud como string em alguns endpoints). Int() devolve 0 se vazio.
+type IntStr int
+
+func (i *IntStr) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" || s == "null" {
+		*i = 0
+		return nil
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		*i = IntStr(n)
+		return nil
+	}
+	*i = 0
+	return nil
+}
+
+func (i IntStr) Int() int { return int(i) }
+
+// BoolStr aceita tanto bool quanto string ("t"/"f"/"true"/"false") — o admin
+// devolve active/printsBill como "t"/"f" em alguns endpoints.
+type BoolStr bool
+
+func (b *BoolStr) UnmarshalJSON(data []byte) error {
+	s := strings.TrimSpace(string(data))
+	switch s {
+	case "true", "\"t\"", "\"true\"", "1":
+		*b = true
+	case "false", "\"f\"", "\"false\"", "0", "null", "":
+		*b = false
+	default:
+		*b = false
+	}
+	return nil
+}
+
+func (b BoolStr) Bool() bool { return bool(b) }
 
 type resultadoAck struct {
 	ID     string `json:"id"`

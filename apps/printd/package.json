@@ -5,6 +5,7 @@
   "description": "Daemon de impressão do leandroSys: dono da fila (claim → transporte → ack por impressora) + API local 127.0.0.1. O Electron só é um cliente de UI.",
   "scripts": {
     "build": "mkdir -p bin && go build -o bin/printd ./cmd/printd",
+    "build:win": "mkdir -p bin && GOOS=windows GOARCH=amd64 go build -o bin/printd.exe ./cmd/printd",
     "start": "go run ./cmd/printd",
     "smoke": "go run ./cmd/smoke",
     "typecheck": "go vet ./..."

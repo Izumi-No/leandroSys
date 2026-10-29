@@ -14,14 +14,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { brl } from '@/lib/format';
-import type { AdicionalDTO } from '@/lib/types';
+import type { AdicionalDTO, CategoriaDTO, ProdutoDTO } from '@/lib/types';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
 import useSWR, { mutate } from 'swr';
 
-type Formulario = { id: string | null; name: string; price: string; active: boolean };
+type Formulario = { id: string | null; name: string; price: string; active: boolean; categoryId?: string | null; productId?: string | null };
 
 const VAZIO: Formulario = { id: null, name: '', price: '0', active: true };
 const CHAVE = '/aditionals?includeInactive=true';
@@ -43,7 +50,9 @@ export function AdicionaisPanel() {
   }
 
   async function salvar() {
-    const corpo = { name: form.name.trim(), price: Number(form.price), active: form.active };
+    const corpo: any = { name: form.name.trim(), price: Number(form.price), active: form.active };
+    if (form.categoryId) corpo.categoryId = form.categoryId;
+    if (form.productId) corpo.productId = form.productId;
     if (form.id) await api(`/aditionals/${form.id}`, { method: 'PATCH', body: corpo });
     else await api('/aditionals', { method: 'POST', body: corpo });
     await mutate(CHAVE);

@@ -1,0 +1,10 @@
+name = "leandrosys-api"
+compatibility_date = "2024-10-29"
+# O entrypoint do Workers – o Wrangler aceita arquivos .ts que exportam um objeto com fetch
+main = "apps/api/src/index.ts"
+
+# Se for necessário acesso a variáveis sensíveis, use "[vars]" aqui ou crie segredos via wrangler secret
+[vars]
+# DATABASE_URL = "..."
+# JWT_SECRET = "..."
+# CORS_ORIGIN = "..."

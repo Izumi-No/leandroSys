@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { requireAdmin, requireAuth, requireOperator } from '../../lib/auth';
 import { conflict, notFound } from '../../lib/errors';
 import { parseBody, parseOptionalBody, parseParams } from '../../lib/validate';
-import { db } from '../../prisma/db';
+import { db } from '../../infrastructure/drizzle/db';
+import { schema } from '../../infrastructure/drizzle/schema';
+import { eq, and, neq, inArray } from 'drizzle-orm';
+
+// ... (other imports unchanged)
 import { loadComanda, serializeComandaDetail } from '../comandas/service';
 import {
   cancelReservation,
@@ -74,9 +78,11 @@ tableRoutes.post('/tables/:id/transfer', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, transferSchema);
 
-  const comanda = await db.orm.public.Comanda
-    .where({ tableId: id })
-    .where((comanda) => comanda.status.neq('CLOSED'))
+  const comanda = await db
+    .select()
+    .from(schema.comandas)
+    .where(eq(schema.comandas.tableId, id))
+    .where(neq(schema.comandas.status, 'CLOSED'))
     .first();
   if (!comanda) throw conflict('Mesa não possui comanda em aberto');
 

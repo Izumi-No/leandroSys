@@ -1,10 +1,5 @@
-// Package transport envia os bytes ESC/POS para o hardware.
-//
-//   - NETWORK: TCP (porta padrão 9100) — em processo.
-//   - BLUETOOTH: socket RFCOMM do kernel (AF_BLUETOOTH), sem módulo nativo —
-//     é a vantagem do daemon em Go: nada de ABI/compilar contra o Electron.
-//   - USB: porta serial 8N1 (ttyUSB/ttyACM/by-id) ou char device da classe
-//     printer (/dev/usb/lp*), via termios do próprio kernel.
+//go:build linux
+
 package transport
 
 import (
@@ -13,15 +8,6 @@ import (
 
 	"leandrosys/printd/internal/config"
 )
-
-type Resultado struct {
-	Ok   bool   `json:"ok"`
-	Erro string `json:"erro,omitempty"`
-}
-
-func falha(formato string, args ...any) Resultado {
-	return Resultado{Ok: false, Erro: fmt.Sprintf(formato, args...)}
-}
 
 // Disponivel diz se dá para transmitir por aqui. No USB o dispositivo precisa
 // existir agora (evita queimar tentativas de job com a impressora desplugada).

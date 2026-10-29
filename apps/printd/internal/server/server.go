@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -308,9 +309,9 @@ func (s *Server) atrelar(w http.ResponseWriter, r *http.Request) {
 		Nome:       printer.Name,
 		Endereco:   printer.Address,
 		Transporte: printer.Transport,
-		Colunas:    printer.Columns,
-		Codepage:   printer.Codepage,
-		Baud:       printer.Baud,
+		Colunas:    printer.Columns.Int(),
+		Codepage:   printer.Codepage.Int(),
+		Baud:       printer.Baud.Int(),
 	}
 	if err := s.store.Update(func(c *config.Arquivo) {
 		substituida := false
@@ -393,9 +394,9 @@ func (s *Server) testar(w http.ResponseWriter, r *http.Request) {
 // Utilidades
 // -----------------------------------------------------------------------
 
-// inferirTransporte: /dev/... → USB; MAC → Bluetooth; IP/host[:porta] → rede.
+// inferirTransporte: /dev/... ou COMn → USB; MAC → Bluetooth; IP/host[:porta] → rede.
 func inferirTransporte(endereco string) (string, error) {
-	if strings.HasPrefix(endereco, "/dev/") {
+	if strings.HasPrefix(endereco, "/dev/") || ehPortaCOM(endereco) {
 		return "USB", nil
 	}
 	if bluez.EhMAC(endereco) {
@@ -410,7 +411,19 @@ func inferirTransporte(endereco string) (string, error) {
 	if net.ParseIP(host) != nil || strings.Contains(host, ".") || host == "localhost" {
 		return "NETWORK", nil
 	}
-	return "", fmt.Errorf("não reconheci %q — use um caminho /dev/…, MAC (AA:BB:CC:DD:EE:FF) ou IP[:porta]", endereco)
+	return "", fmt.Errorf("não reconheci %q — use um caminho /dev/…, COMn (Windows), MAC (AA:BB:CC:DD:EE:FF) ou IP[:porta]", endereco)
+}
+
+// ehPortaCOM confere "COM1".."COM256" (porta serial do Windows).
+func ehPortaCOM(v string) bool {
+	if len(v) < 4 || len(v) > 7 {
+		return false
+	}
+	if !strings.EqualFold(v[:3], "COM") {
+		return false
+	}
+	n, err := strconv.Atoi(v[3:])
+	return err == nil && n >= 1 && n <= 256
 }
 
 func statusDoErro(err error) int {

@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
-import { authController } from '../adapters/http/authController';
-import { catalogController } from '../adapters/http/catalogController';
-import { comandaController } from '../adapters/http/comandaController';
-import { printerController } from '../adapters/http/printerController';
-import { tableController } from '../adapters/http/tableController';
-import { env } from '../env';
+import { authController } from './adapters/http/authController';
+import { catalogController } from './adapters/http/catalogController';
+import { comandaController } from './adapters/http/comandaController';
+import { printerController } from './adapters/http/printerController';
+import { tableController } from './adapters/http/tableController';
+import { env } from './env';
 import { cors } from 'hono/cors';
-import { errorResponse } from '../lib/errors';
-import type { AppEnv } from '../lib/auth';
+import { errorResponse } from './lib/errors';
+import type { AppEnv } from './lib/auth';
 
 export function createApp(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

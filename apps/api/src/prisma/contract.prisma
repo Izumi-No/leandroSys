@@ -14,11 +14,12 @@ enum Role {
     CHEF
 }
 
+
 model User {
     id        Uuid   @id @onCreate(uuid())
     username  String @unique
     password  String
-    role      Role
+    role      Role?
     createdAt TimestamptzJsDate @default(now())
 
     comandas Comanda[]
@@ -35,6 +36,7 @@ model Category {
 
     products    Product[]
     printRoutes PrintRoute[]
+    aditionals  Aditional[] @relation("CategoryAditionals")
 }
 
 model Product {
@@ -47,15 +49,23 @@ model Product {
 
     items       ComandaItem[]
     printRoutes PrintRoute[]
+    aditionals  Aditional[] @relation("ProductAditionals")
 }
 
 model Aditional {
-    id     Uuid   @id @onCreate(uuid())
-    name   String @unique
-    price  Decimal
-    active Boolean @default(true)
+    id         Uuid   @id @onCreate(uuid())
+    name       String
+    price      Decimal
+    categoryId Uuid?
+    category   Category? @relation(name: "CategoryAditionals", fields: [categoryId], references: [id], onDelete: SetNull)
+    productId  Uuid?
+    product    Product?  @relation(name: "ProductAditionals", fields: [productId], references: [id], onDelete: SetNull)
+    active     Boolean  @default(true)
 
     comandaItems ComandaItemAditional[]
+
+    @@index([categoryId])
+    @@index([productId])
 }
 
 // ---------------------------------------------------------------------------

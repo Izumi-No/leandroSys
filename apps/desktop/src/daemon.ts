@@ -14,10 +14,18 @@ type ConfigPrintd = { porta?: number; token?: string };
 
 const espera = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Caminho do config, alinhado com o do daemon (os.UserConfigDir()). */
+/** Caminho do config, alinhado com o do daemon (os.UserConfigDir() do Go):
+ * Windows → %APPDATA%, macOS → ~/Library/Application Support, demais → XDG. */
 function caminhoConfig(): string {
   if (process.env['PRINTD_CONFIG']) return process.env['PRINTD_CONFIG'];
-  const base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
+  let base: string;
+  if (process.platform === 'win32') {
+    base = process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming');
+  } else if (process.platform === 'darwin') {
+    base = path.join(os.homedir(), 'Library', 'Application Support');
+  } else {
+    base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
+  }
   return path.join(base, 'leandrosys', 'printd.json');
 }
 
@@ -102,12 +110,13 @@ export class GerenciadorDaemon {
   // -------------------------------------------------------------------------
 
   private candidatosBinario(): string[] {
+    const nome = process.platform === 'win32' ? 'printd.exe' : 'printd';
     const lista: string[] = [];
     if (process.env['PRINTD_BIN']) lista.push(process.env['PRINTD_BIN']);
     // dev: apps/printd/bin/printd ao lado deste app (dist/main.js → ../../printd/bin/printd)
-    lista.push(path.join(__dirname, '..', '..', 'printd', 'bin', 'printd'));
-    lista.push(path.join(process.cwd(), 'apps', 'printd', 'bin', 'printd'));
-    lista.push('printd'); // PATH do sistema (instalação global)
+    lista.push(path.join(__dirname, '..', '..', 'printd', 'bin', nome));
+    lista.push(path.join(process.cwd(), 'apps', 'printd', 'bin', nome));
+    lista.push(nome); // PATH do sistema (instalação global)
     return lista;
   }
 

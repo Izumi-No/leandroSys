@@ -1,7 +1,0 @@
-name = "leandrosys-web"
-pages_build_script = "vite build"
-compatibility_date = "2025-10-27"
-
-[vars]
-# URL da API backend (Hono, porta 3000). Em dev é localhost.
-API_UPSTREAM = "http://localhost:3000"

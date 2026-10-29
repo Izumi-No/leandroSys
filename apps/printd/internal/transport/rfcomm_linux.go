@@ -1,3 +1,5 @@
+//go:build linux
+
 package transport
 
 import (
@@ -75,7 +77,7 @@ func Conectar(mac string, canal byte, timeout time.Duration) (int, error) {
 	}
 
 	// Teto de espera (o kernel RFCOMM nem sempre honra SO_SNDTIMEO; o
-	// esperarConexao abaixo tem o próprio prazo).
+	// esperarConnettacao abaixo tem o próprio prazo).
 	tv := syscall.NsecToTimeval(int64(timeout))
 	_ = syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_SNDTIMEO, &tv)
 
@@ -99,7 +101,7 @@ func Conectar(mac string, canal byte, timeout time.Duration) (int, error) {
 	case errno == syscall.EINPROGRESS || errno == syscall.EALREADY:
 		// O kernel enfileira o link ACL e devolve EINPROGRESS mesmo em socket
 		// bloqueante: espera a conclusão (sucesso ou erro) via Select/SO_ERROR.
-		if err := esperarConexao(fd, timeout); err != nil {
+		if err := esperarConcao(fd, timeout); err != nil {
 			syscall.Close(fd)
 			return -1, fmt.Errorf("conexão RFCOMM %s (canal %d): %s", mac, canal, err)
 		}
@@ -112,9 +114,9 @@ func Conectar(mac string, canal byte, timeout time.Duration) (int, error) {
 	}
 }
 
-// esperarConexao aguarda o connect() terminar: socket liberado para escrita →
+// esperarConcao aguarda o connect() terminar: socket liberado para escrita →
 // SO_ERROR diz se conectou (0) ou qual foi a falha.
-func esperarConexao(fd int, timeout time.Duration) error {
+func esperarConcao(fd int, timeout time.Duration) error {
 	prazo := time.Now().Add(timeout)
 	for {
 		restante := time.Until(prazo)
@@ -140,12 +142,12 @@ func esperarConexao(fd int, timeout time.Duration) error {
 			continue // fatia de tempo esgotada, prazo ainda vale
 		}
 
-		erroConexao, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ERROR)
+		erroConnetcao, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ERROR)
 		if err != nil {
 			return err
 		}
-		if erroConexao != 0 {
-			return syscall.Errno(erroConexao)
+		if erroConnetcao != 0 {
+			return syscall.Errno(erroConnetcao)
 		}
 		return nil
 	}
@@ -163,4 +165,8 @@ func inverterMAC(mac string) [6]byte {
 		b[5-i] = byte(v)
 	}
 	return b
+}
+// Fechar fecha um descritor devolvido por Conectar (socket no kernel).
+func Fechar(fd int) {
+	_ = syscall.Close(fd)
 }

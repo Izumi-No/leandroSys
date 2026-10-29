@@ -1,5 +1,7 @@
-import { db } from '../../prisma/db';
+import { db } from '../../infrastructure/drizzle/db';
 import type { TicketDoc } from './escpos';
+import { printRoutes, printers, printJobs } from '../../infrastructure/drizzle/schema';
+import { eq, inArray, desc } from 'drizzle-orm';
 
 /**
  * Qualquer contexto de consulta serve aqui: o client global (`db`) ou o `tx`
@@ -53,28 +55,34 @@ export async function loadRouteMaps(
   const maps: RouteMaps = { byProduct: new Map(), byCategory: new Map() };
 
   if (products.length > 0) {
-    const routes = await client.orm.public.PrintRoute
-      .where((route) => route.productId.in(products))
-      .include('printer')
-      .orderBy((route) => route.priority.desc())
+    const routes = await db
+      .select()
+      .from(printRoutes)
+      .where(inArray(printRoutes.productId, products))
+      .leftJoin(printers, eq(printers.id, printRoutes.printerId))
+      .orderBy(desc(printRoutes.priority))
       .all();
 
     for (const route of routes) {
-      if (!route.productId) continue;
-      push(maps.byProduct, route.productId, toRoutedPrinter(route.printer));
+      if (!route.printRoutes?.productId) continue;
+      const printer = route.printers;
+      push(maps.byProduct, route.printRoutes.productId, toRoutedPrinter(printer));
     }
   }
 
   if (categories.length > 0) {
-    const routes = await client.orm.public.PrintRoute
-      .where((route) => route.categoryId.in(categories))
-      .include('printer')
-      .orderBy((route) => route.priority.desc())
+    const routes = await db
+      .select()
+      .from(printRoutes)
+      .where(inArray(printRoutes.categoryId, categories))
+      .leftJoin(printers, eq(printers.id, printRoutes.printerId))
+      .orderBy(desc(printRoutes.priority))
       .all();
 
     for (const route of routes) {
-      if (!route.categoryId) continue;
-      push(maps.byCategory, route.categoryId, toRoutedPrinter(route.printer));
+      if (!route.printRoutes?.categoryId) continue;
+      const printer = route.printers;
+      push(maps.byCategory, route.printRoutes.categoryId, toRoutedPrinter(printer));
     }
   }
 
@@ -96,12 +104,15 @@ export type EnqueueInput = {
 
 /** Enfileira um job na fila da impressora. */
 export async function enqueueJob(client: DbLike, input: EnqueueInput): Promise<string> {
-  const job = await client.orm.public.PrintJob.create({
-    printerId: input.printerId,
-    comandaId: input.comandaId ?? null,
-    comandaItemId: input.comandaItemId ?? null,
-    kind: input.kind,
-    payload: input.payload as never,
-  });
+  const [job] = await db
+    .insert(printJobs)
+    .values({
+      printerId: input.printerId,
+      comandaId: input.comandaId ?? null,
+      comandaItemId: input.comandaItemId ?? null,
+      kind: input.kind,
+      payload: input.payload as any,
+    })
+    .returning();
   return job.id;
 }

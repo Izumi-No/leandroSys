@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"leandrosys/printd/internal/agent"
@@ -264,7 +263,7 @@ func preVooBluetooth() {
 	go func() {
 		fd, err := transport.Conectar("00:00:00:00:00:00", 1, 3*time.Second)
 		if err == nil {
-			syscall.Close(fd)
+			transport.Fechar(fd)
 			fim <- resultado{}
 			return
 		}

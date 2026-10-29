@@ -232,6 +232,13 @@
                   "kind": "scalar"
                 }
               },
+              "categoryId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -252,9 +259,32 @@
                   "codecId": "pg/numeric@1",
                   "kind": "scalar"
                 }
+              },
+              "productId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
               }
             },
             "relations": {
+              "category": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "categoryId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Category",
+                  "namespace": "public"
+                }
+              },
               "comandaItems": {
                 "cardinality": "1:N",
                 "on": {
@@ -269,12 +299,31 @@
                   "model": "ComandaItemAditional",
                   "namespace": "public"
                 }
+              },
+              "product": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "productId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Product",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
               "fields": {
                 "active": {
                   "column": "active"
+                },
+                "categoryId": {
+                  "column": "categoryId"
                 },
                 "id": {
                   "column": "id"
@@ -284,6 +333,9 @@
                 },
                 "price": {
                   "column": "price"
+                },
+                "productId": {
+                  "column": "productId"
                 }
               },
               "namespaceId": "public",
@@ -315,6 +367,21 @@
               }
             },
             "relations": {
+              "aditionals": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "categoryId"
+                  ]
+                },
+                "to": {
+                  "model": "Aditional",
+                  "namespace": "public"
+                }
+              },
               "printRoutes": {
                 "cardinality": "1:N",
                 "on": {
@@ -1291,6 +1358,21 @@
               }
             },
             "relations": {
+              "aditionals": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "productId"
+                  ]
+                },
+                "to": {
+                  "model": "Aditional",
+                  "namespace": "public"
+                }
+              },
               "category": {
                 "cardinality": "N:1",
                 "nullable": false,
@@ -1467,7 +1549,7 @@
                 }
               },
               "role": {
-                "nullable": false,
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -1546,6 +1628,11 @@
                   },
                   "nullable": false
                 },
+                "categoryId": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": true
+                },
                 "id": {
                   "codecId": "pg/uuid@1",
                   "dataType": "pg/uuid",
@@ -1560,22 +1647,79 @@
                   "codecId": "pg/numeric@1",
                   "dataType": "pg/numeric",
                   "nullable": false
+                },
+                "productId": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": true
                 }
               },
-              "foreignKeys": [],
-              "indexes": [],
+              "foreignKeys": [
+                {
+                  "index": {
+                    "name": "Aditional_categoryId_idx_15c304f2"
+                  },
+                  "onDelete": "setNull",
+                  "source": {
+                    "columns": [
+                      "categoryId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "Aditional"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "Category"
+                  }
+                },
+                {
+                  "index": {
+                    "name": "Aditional_productId_idx_5858600a"
+                  },
+                  "onDelete": "setNull",
+                  "source": {
+                    "columns": [
+                      "productId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "Aditional"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "Product"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "categoryId"
+                  ],
+                  "name": "Aditional_categoryId_idx_15c304f2",
+                  "prefix": "Aditional_categoryId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "productId"
+                  ],
+                  "name": "Aditional_productId_idx_5858600a",
+                  "prefix": "Aditional_productId_idx",
+                  "unique": false
+                }
+              ],
               "primaryKey": {
                 "columns": [
                   "id"
                 ]
               },
-              "uniques": [
-                {
-                  "columns": [
-                    "name"
-                  ]
-                }
-              ]
+              "uniques": []
             },
             "Category": {
               "columns": {
@@ -2621,7 +2765,7 @@
                 "role": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
-                  "nullable": false,
+                  "nullable": true,
                   "valueSet": {
                     "entityKind": "valueSet",
                     "entityName": "Role",
@@ -2730,7 +2874,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "ce294b28c826a9da4b77971cad6cc059c3880e58e12a44eb8cfe13437427aa03"
+    "storageHash": "3790310020052f007f1d716809894ce046b6abf58979050a0becef661d7dd5c8"
   },
   "execution": {
     "executionHash": "0aea85c4e6b92e92eca0b6c54673b8edce23172e8773d7163ba7345610e99c40",

@@ -1,0 +1,16 @@
+{
+  "parser": "typescript",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf"
+  },
+  "linter": {
+    "rules": {
+      "complexity": { "max": 10 },
+      "noUnusedVars": true,
+      "noImplicitAny": true,
+      "consistentImportExport": true
+    }
+  }
+}

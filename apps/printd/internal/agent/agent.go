@@ -211,9 +211,9 @@ func (a *Agent) Reconciliar(ctx context.Context) {
 			Nome:       p.Name,
 			Endereco:   p.Address,
 			Transporte: p.Transport,
-			Colunas:    p.Columns,
-			Codepage:   p.Codepage,
-			Baud:       p.Baud,
+			Colunas:    p.Columns.Int(),
+			Codepage:   p.Codepage.Int(),
+			Baud:       p.Baud.Int(),
 		})
 	}
 

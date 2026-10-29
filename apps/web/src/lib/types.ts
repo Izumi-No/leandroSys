@@ -17,7 +17,7 @@ export type ProdutoDTO = {
   category: { id: string; name: string };
 };
 
-export type AdicionalDTO = { id: string; name: string; price: string; active: boolean };
+export type AdicionalDTO = { id: string; name: string; price: string; active: boolean; categoryId?: string | null; productId?: string | null };
 
 export type UsuarioDTO = AuthUser & { createdAt: string };
 

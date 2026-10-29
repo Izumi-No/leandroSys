@@ -1,31 +1,30 @@
 /**
- * Script de limpeza do banco de dados.
- * Mantém apenas a(s) tabela(s) de usuários (e a de contas, caso exista).
- * Utilizado em desenvolvimento e CI para garantir um estado limpo antes dos testes.
+ * Script de limpeza do banco de produção.
+ * Mantém apenas a tabela de usuários.
  */
-import { db } from '../prisma/db';
+import { db } from '../infrastructure/drizzle/db';
 
 async function clean() {
-  // Remove todas as tabelas públicas exceto User/Account (dependendo do modelo de auth).
-  await db.$executeRawUnsafe(`
-    DO $$
-    DECLARE r RECORD;
-    BEGIN
-      FOR r IN (
-        SELECT tablename
-        FROM pg_tables
-        WHERE schemaname = 'public'
-        AND tablename NOT IN ('User', 'Account')
-      ) LOOP
-        EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
-      END LOOP;
-    END $$;
-  `);
-  console.log('🧹 DB limpo – apenas usuários permanecem.');
-  await db.$disconnect();
+  // Lista explícita de modelos a limpar (exceto User)
+  const models = [
+    'PrintJob',
+    'PrintRoute',
+    'ComandaItemAditional',
+    'ComandaItem',
+    'Aditional',
+    'Comanda',
+    'Product',
+    'Table',
+    'Printer',
+    'Category',
+  ] as const;
+  for (const name of models) {
+    const table = (schema as any)[name];
+    if (table) await db.delete(table).run();
+  }
 }
 
-clean().catch((e) => {
-  console.error('Erro ao limpar DB:', e);
-  process.exit(1);
-});
+clean()
+  .then(() => console.log('🧹 DB limpo – apenas usuários permanecem.'))
+  .catch((e) => console.error('Erro ao limpar DB:', e))
+  .finally(() => db.$disconnect?.());

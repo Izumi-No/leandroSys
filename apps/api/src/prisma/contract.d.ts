@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'ce294b28c826a9da4b77971cad6cc059c3880e58e12a44eb8cfe13437427aa03'>;
+  StorageHashBase<'3790310020052f007f1d716809894ce046b6abf58979050a0becef661d7dd5c8'>;
 export type ExecutionHash =
   ExecutionHashBase<'0aea85c4e6b92e92eca0b6c54673b8edce23172e8773d7163ba7345610e99c40'>;
 export type ProfileHash =
@@ -368,19 +368,24 @@ export type StorageColumnInputTypes = ColumnTypesFromStorage<
 export namespace Models {
   export type public_Aditional = {
     active: FieldOutputTypes['public']['Aditional']['active'];
+    categoryId: FieldOutputTypes['public']['Aditional']['categoryId'];
     id: FieldOutputTypes['public']['Aditional']['id'];
     name: FieldOutputTypes['public']['Aditional']['name'];
     price: FieldOutputTypes['public']['Aditional']['price'];
+    productId: FieldOutputTypes['public']['Aditional']['productId'];
+    category: public_Category | null;
     comandaItems: public_ComandaItemAditional[];
-    readonly [RelationKeys]?: 'comandaItems';
+    product: public_Product | null;
+    readonly [RelationKeys]?: 'category' | 'comandaItems' | 'product';
   };
   export type public_Category = {
     active: FieldOutputTypes['public']['Category']['active'];
     id: FieldOutputTypes['public']['Category']['id'];
     name: FieldOutputTypes['public']['Category']['name'];
+    aditionals: public_Aditional[];
     printRoutes: public_PrintRoute[];
     products: public_Product[];
-    readonly [RelationKeys]?: 'printRoutes' | 'products';
+    readonly [RelationKeys]?: 'aditionals' | 'printRoutes' | 'products';
   };
   export type public_Comanda = {
     closedAt: FieldOutputTypes['public']['Comanda']['closedAt'];
@@ -474,10 +479,11 @@ export namespace Models {
     id: FieldOutputTypes['public']['Product']['id'];
     name: FieldOutputTypes['public']['Product']['name'];
     price: FieldOutputTypes['public']['Product']['price'];
+    aditionals: public_Aditional[];
     category: public_Category;
     items: public_ComandaItem[];
     printRoutes: public_PrintRoute[];
-    readonly [RelationKeys]?: 'category' | 'items' | 'printRoutes';
+    readonly [RelationKeys]?: 'aditionals' | 'category' | 'items' | 'printRoutes';
   };
   export type public_Table = {
     capacity: FieldOutputTypes['public']['Table']['capacity'];
@@ -545,6 +551,12 @@ type ContractBase = Omit<
                   };
                   readonly many: false;
                 };
+                readonly categoryId: {
+                  readonly dataType: 'pg/uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly id: {
                   readonly dataType: 'pg/uuid';
                   readonly codecId: 'pg/uuid@1';
@@ -563,11 +575,55 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly productId: {
+                  readonly dataType: 'pg/uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
               };
               primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [{ readonly columns: readonly ['name'] }];
-              indexes: readonly [];
-              foreignKeys: readonly [];
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'Aditional_categoryId_idx_15c304f2';
+                  readonly prefix: 'Aditional_categoryId_idx';
+                  readonly columns: readonly ['categoryId'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Aditional_productId_idx_5858600a';
+                  readonly prefix: 'Aditional_productId_idx';
+                  readonly columns: readonly ['productId'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Aditional';
+                    readonly columns: readonly ['categoryId'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Category';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Aditional';
+                    readonly columns: readonly ['productId'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Product';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+              ];
             };
             readonly Category: {
               columns: {
@@ -1375,7 +1431,7 @@ type ContractBase = Omit<
                 readonly role: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
+                  readonly nullable: true;
                   readonly many: false;
                 };
                 readonly username: {
@@ -1473,6 +1529,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
               };
+              readonly categoryId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
@@ -1485,8 +1545,24 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/numeric@1' };
               };
+              readonly productId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
             };
             readonly relations: {
+              readonly category: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Category';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: true;
+                readonly on: {
+                  readonly localFields: readonly ['categoryId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
               readonly comandaItems: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -1498,15 +1574,29 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['aditionalId'];
                 };
               };
+              readonly product: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Product';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: true;
+                readonly on: {
+                  readonly localFields: readonly ['productId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
             };
             readonly storage: {
               readonly table: 'Aditional';
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly active: { readonly column: 'active' };
+                readonly categoryId: { readonly column: 'categoryId' };
                 readonly id: { readonly column: 'id' };
                 readonly name: { readonly column: 'name' };
                 readonly price: { readonly column: 'price' };
+                readonly productId: { readonly column: 'productId' };
               };
             };
           };
@@ -1526,6 +1616,17 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
+              readonly aditionals: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Aditional';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['categoryId'];
+                };
+              };
               readonly printRoutes: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -2139,6 +2240,17 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
+              readonly aditionals: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Aditional';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['productId'];
+                };
+              };
               readonly category: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -2252,7 +2364,7 @@ type ContractBase = Omit<
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly role: {
-                readonly nullable: false;
+                readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly username: {
