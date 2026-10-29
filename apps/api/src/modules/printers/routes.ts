@@ -6,7 +6,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 import { parseBody, parseParams, parseQuery } from '../../lib/validate';
 import { db } from '../../prisma/db';
 import type { Database } from '../../prisma/types';
-import { renderTicketBase64, type TicketDoc } from '../printing/escpos';
+import { parseTicketDoc, renderTicketBase64 } from '../printing/escpos';
 import { enqueueJob } from '../printing/queue';
 import { testTicket } from '../printing/tickets';
 
@@ -511,7 +511,7 @@ printRoutes.post('/print-jobs/claim', requireAuth, async (c) => {
     comandaItemId: job.comandaItemId,
     columns: printer.columns,
     codepage: printer.codepage,
-    data: renderTicketBase64(job.payload as unknown as TicketDoc, {
+    data: renderTicketBase64(parseTicketDoc(job.payload), {
       columns: printer.columns,
       codepage: printer.codepage,
     }),

@@ -11,6 +11,7 @@
     "start": "tsx src/index.ts",
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "db:ddl": "node scripts/gen-ddl.mjs",
     "db:ddl:apply": "node scripts/apply-ddl.cjs",
     "db:ddl:reset": "node scripts/clean-db.cjs && node scripts/apply-ddl.cjs",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
+    "vitest": "^5.0.5",
     "wrangler": "^4.153.0"
   }
 }

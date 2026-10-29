@@ -118,3 +118,24 @@ export function renderTicket(doc: TicketDoc, options: RenderOptions): Buffer {
 export function renderTicketBase64(doc: TicketDoc, options: RenderOptions): string {
   return renderTicket(doc, options).toString('base64');
 }
+
+/**
+ * Normaliza o `payload` guardado em `PrintJob` para um `TicketDoc`.
+ *
+ * A coluna é `pg/json`: o driver devolve a **string** bruta, não o objeto.
+ * Passar a string direto para `renderTicket` faz `doc.lines` ser `undefined` e
+ * o render estoura `doc.lines is not iterable`. No `claim` isso acontece depois
+ * da transação que marcou o job `PRINTING` — o agente nunca recebia os bytes,
+ * nunca dava ack e o job ficava preso, reivindicado em loop até esgotar as
+ * tentativas.
+ *
+ * Aceita também um objeto já parseado, para não depender do formato de saída
+ * do driver.
+ */
+export function parseTicketDoc(payload: unknown): TicketDoc {
+  const doc: unknown = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  if (!doc || typeof doc !== 'object' || !Array.isArray((doc as TicketDoc).lines)) {
+    throw new Error('payload do job inválido: esperado um objeto com lines[]');
+  }
+  return doc as TicketDoc;
+}
