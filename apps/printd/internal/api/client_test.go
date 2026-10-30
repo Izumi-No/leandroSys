@@ -15,7 +15,9 @@ func TestClaimUsesApiPayloadContract(t *testing.T) {
 	const printerID = "550e8400-e29b-41d4-a716-446655440000"
 	const agentID = "agent-local-123"
 
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
 		if r.Method != http.MethodPost {
 			t.Errorf("método = %q, esperado POST", r.Method)
 		}
@@ -39,7 +41,11 @@ func TestClaimUsesApiPayloadContract(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jobs":[]}`))
+		if requestCount == 1 {
+			_, _ = w.Write([]byte(`{"jobs":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"jobs":[{"id":"job-1","kind":"ORDER","status":"PRINTING","attempts":1,"data":"YQ==","printerId":"550e8400-e29b-41d4-a716-446655440000","columns":48,"codepage":0}]}`))
 	}))
 	defer server.Close()
 
@@ -57,9 +63,20 @@ func TestClaimUsesApiPayloadContract(t *testing.T) {
 	client.token = "token-de-teste"
 	jobs, err := client.Claim(context.Background(), printerID, agentID, 8)
 	if err != nil {
-		t.Fatalf("claim: %v", err)
+		t.Fatalf("claim vazio: %v", err)
 	}
 	if len(jobs) != 0 {
 		t.Fatalf("jobs = %d, esperado 0", len(jobs))
+	}
+
+	jobs, err = client.Claim(context.Background(), printerID, agentID, 8)
+	if err != nil {
+		t.Fatalf("claim com job: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, esperado 1", len(jobs))
+	}
+	if job := jobs[0]; job.ID != "job-1" || job.PrinterID != printerID || job.Columns != 48 || job.Data != "YQ==" {
+		t.Fatalf("job decodificado = %+v, contrato inesperado", job)
 	}
 }

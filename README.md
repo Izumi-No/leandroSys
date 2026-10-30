@@ -73,7 +73,7 @@ Usuários do seed: `admin/admin123`, `garcom/garcom123`, `caixa/caixa123`,
 - [`apps/desktop/README.md`](apps/desktop/README.md) — **UI da impressão** (Electron):
   cliente fino do `printd` — sobe o daemon se preciso, configuração única e pareamento
   com um campo.
-- `apps/api/README.md` — endpoints, contrato de erros e motor de impressão.
+- `apps/api/prisma-8.md` — notas sobre Prisma 8 (contract, `db update`, codecs).
 
 Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG com
 `pnpm docs:build` (requer o [D2](https://d2lang.com) instalado).
