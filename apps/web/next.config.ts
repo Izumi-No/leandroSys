@@ -1,4 +1,11 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { NextConfig } from 'next';
+
+if (process.env.NODE_ENV === 'development') {
+  const projectEnvFile = resolve(process.cwd(), '../../.env.development.local');
+  if (existsSync(projectEnvFile)) process.loadEnvFile(projectEnvFile);
+}
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@leandrosys/api', '@leandrosys/shared'],
