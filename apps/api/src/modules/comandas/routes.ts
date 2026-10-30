@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAuth, requireOperator } from '../../lib/auth';
+import type { AppEnv } from '../../lib/auth';
 import { notFound } from '../../lib/errors';
 import { parseBody, parseOptionalBody, parseParams, parseQuery } from '../../lib/validate';
 import {
@@ -48,26 +49,26 @@ const closeSchema = z.object({
   paymentMethod: z.enum(['MONEY', 'CARD', 'PIX', 'OTHER']).optional(),
 });
 
-export const comandaRoutes = new Hono();
+export const comandaRoutes = new Hono<AppEnv>();
 
 comandaRoutes.get('/comandas', requireAuth, async (c) => {
   const query = parseQuery(c, statusQuery);
-  const comandas = await listComandas(query.status);
+  const comandas = await listComandas(c.get('db'), query.status);
   return c.json({ comandas: comandas.map(serializeComandaSummary) });
 });
 
 comandaRoutes.post('/comandas', requireOperator(), async (c) => {
   const body = await parseBody(c, openSchema);
-  const comandaId = await openComanda({ tableId: body.tableId, waiterId: body.waiterId });
+  const comandaId = await openComanda(c.get('db'), { tableId: body.tableId, waiterId: body.waiterId });
 
-  const comanda = await loadComanda(comandaId);
+  const comanda = await loadComanda(c.get('db'), comandaId);
   if (!comanda) throw notFound('Comanda não encontrada');
   return c.json({ comanda: serializeComandaDetail(comanda) }, 201);
 });
 
 comandaRoutes.get('/comandas/:id', requireAuth, async (c) => {
   const { id } = parseParams(c, idParam);
-  const comanda = await loadComanda(id);
+  const comanda = await loadComanda(c.get('db'), id);
   if (!comanda) throw notFound('Comanda não encontrada');
   return c.json({ comanda: serializeComandaDetail(comanda) });
 });
@@ -76,14 +77,14 @@ comandaRoutes.post('/comandas/:id/items', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, addItemSchema);
 
-  await addItem(id, {
+  await addItem(c.get('db'), id, {
     productId: body.productId,
     quantity: body.quantity ?? 1,
     note: body.note,
     aditionalIds: body.aditionalIds,
   });
 
-  const comanda = await loadComanda(id);
+  const comanda = await loadComanda(c.get('db'), id);
   if (!comanda) throw notFound('Comanda não encontrada');
   return c.json({ comanda: serializeComandaDetail(comanda) }, 201);
 });
@@ -91,20 +92,20 @@ comandaRoutes.post('/comandas/:id/items', requireOperator(), async (c) => {
 comandaRoutes.patch('/comandas/:id/items/:itemId', requireOperator(), async (c) => {
   const { id, itemId } = parseParams(c, itemParam);
   const body = await parseBody(c, updateItemSchema);
-  await updateItem(id, itemId, body);
+  await updateItem(c.get('db'), id, itemId, body);
   return c.json({ updated: true });
 });
 
 comandaRoutes.delete('/comandas/:id/items/:itemId', requireOperator(), async (c) => {
   const { id, itemId } = parseParams(c, itemParam);
-  const result = await removeItem(id, itemId);
+  const result = await removeItem(c.get('db'), id, itemId);
   return c.json({ result });
 });
 
 /** Envia os itens pendentes para as impressoras das rotas (item > categoria). */
 comandaRoutes.post('/comandas/:id/send', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
-  const result = await sendComanda(id);
+  const result = await sendComanda(c.get('db'), id);
   return c.json({
     jobIds: result.jobIds,
     sent: result.sentItems.length,
@@ -115,14 +116,14 @@ comandaRoutes.post('/comandas/:id/send', requireOperator(), async (c) => {
 /** Reimprime um item já enviado. */
 comandaRoutes.post('/comandas/:id/items/:itemId/reprint', requireOperator(), async (c) => {
   const { id, itemId } = parseParams(c, itemParam);
-  const jobIds = await reprintItem(id, itemId);
+  const jobIds = await reprintItem(c.get('db'), id, itemId);
   return c.json({ jobIds });
 });
 
 /** Abre o fechamento: imprime a conta e leva a comanda para PAYING. */
 comandaRoutes.post('/comandas/:id/checkout', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
-  const result = await checkoutComanda(id);
+  const result = await checkoutComanda(c.get('db'), id);
   return c.json(result);
 });
 
@@ -131,8 +132,8 @@ comandaRoutes.post('/comandas/:id/close', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseOptionalBody(c, closeSchema);
 
-  const result = await closeComanda(id, body.paymentMethod);
-  const comanda = await loadComanda(id);
+  const result = await closeComanda(c.get('db'), id, body.paymentMethod);
+  const comanda = await loadComanda(c.get('db'), id);
 
   return c.json({
     ...result,
@@ -142,6 +143,6 @@ comandaRoutes.post('/comandas/:id/close', requireOperator(), async (c) => {
 
 comandaRoutes.delete('/comandas/:id', requireOperator(), async (c) => {
   const { id } = parseParams(c, idParam);
-  await deleteComanda(id);
+  await deleteComanda(c.get('db'), id);
   return c.json({ deleted: true });
 });

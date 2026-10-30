@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { env } from './env';
-import { db } from './prisma/db';
 
 const app = createApp();
 
@@ -17,7 +16,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`\nEncerrando (${signal})...`);
     server.close();
-    await db.destroy();
     process.exit(0);
   };
 

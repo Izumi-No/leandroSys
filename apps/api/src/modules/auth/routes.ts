@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { createToken, requireAdmin, requireAuth } from '../../lib/auth';
+import { requireAdmin, requireAuth, createToken } from '../../lib/auth';
 import { conflict, notFound, unauthorized } from '../../lib/errors';
 import { hashPassword, verifyPassword } from '../../lib/password';
 import { parseBody, parseParams } from '../../lib/validate';
-import { db } from '../../prisma/db';
+import type { AppEnv } from '../../lib/auth';
+import { users } from '../../db/schema';
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -26,12 +28,13 @@ const publicUser = (user: { id: string; username: string; role: string; createdA
   createdAt: user.createdAt,
 });
 
-export const authRoutes = new Hono();
+export const authRoutes = new Hono<AppEnv>();
 
 authRoutes.post('/login', async (c) => {
   const body = await parseBody(c, loginSchema);
+  const db = c.get('db');
 
-  const user = await db.selectFrom('User').selectAll().where('username', '=', body.username).executeTakeFirst();
+  const [user] = await db.select().from(users).where(eq(users.username, body.username)).limit(1);
   const valid = user ? await verifyPassword(body.password, user.password) : false;
   if (!user || !valid) throw unauthorized('Usuário ou senha inválidos');
 
@@ -44,26 +47,26 @@ authRoutes.post('/login', async (c) => {
 authRoutes.get('/me', requireAuth, async (c) => c.json({ user: c.get('user') }));
 
 authRoutes.get('/users', requireAdmin(), async (c) => {
-  const users = await db.selectFrom('User').selectAll().orderBy('username', 'asc').execute();
-  return c.json({ users: users.map(publicUser) });
+  const usersList = await c.get('db').select().from(users).orderBy(users.username);
+  return c.json({ users: usersList.map(publicUser) });
 });
 
 authRoutes.post('/users', requireAdmin(), async (c) => {
   const body = await parseBody(c, createUserSchema);
   const password = await hashPassword(body.password);
 
-  const user = await db
-    .insertInto('User')
+  const [user] = await c
+    .get('db')
+    .insert(users)
     .values({ username: body.username, password, role: body.role })
-    .returningAll()
-    .executeTakeFirstOrThrow();
+    .returning();
 
   return c.json({ user: publicUser(user) }, 201);
 });
 
 authRoutes.get('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
-  const user = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
+  const [user] = await c.get('db').select().from(users).where(eq(users.id, id)).limit(1);
   if (!user) throw notFound('Usuário não encontrado');
   return c.json({ user: publicUser(user) });
 });
@@ -80,37 +83,33 @@ const updateUserSchema = z
 authRoutes.patch('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
   const body = await parseBody(c, updateUserSchema);
+  const db = c.get('db');
 
-  const existing = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
+  const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!existing) throw notFound('Usuário não encontrado');
 
   const patch: { password?: string; role?: 'ADMIN' | 'WAITER' | 'CASHIER' | 'CHEF' } = {};
   if (body.password !== undefined) patch.password = await hashPassword(body.password);
   if (body.role !== undefined) patch.role = body.role;
 
-  const user = await db
-    .updateTable('User')
-    .set(patch)
-    .where('id', '=', id)
-    .returningAll()
-    .executeTakeFirst();
+  const [user] = await db.update(users).set(patch).where(eq(users.id, id)).returning();
   if (!user) throw notFound('Usuário não encontrado');
   return c.json({ user: publicUser(user) });
 });
 
 authRoutes.delete('/users/:id', requireAdmin(), async (c) => {
   const { id } = parseParams(c, idParam);
+  const db = c.get('db');
 
-  const user = await db.selectFrom('User').selectAll().where('id', '=', id).executeTakeFirst();
+  const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!user) throw notFound('Usuário não encontrado');
   if (id === c.get('user').id) throw conflict('Não é possível remover o próprio usuário');
 
-  // Não deixa a instância ficar sem nenhum administrador.
   if (user.role === 'ADMIN') {
-    const admins = await db.selectFrom('User').selectAll().where('role', '=', 'ADMIN').execute();
+    const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'ADMIN'));
     if (admins.length <= 1) throw conflict('Não é possível remover o último administrador');
   }
 
-  await db.deleteFrom('User').where('id', '=', id).execute();
+  await db.delete(users).where(eq(users.id, id));
   return c.json({ id, deleted: true });
 });

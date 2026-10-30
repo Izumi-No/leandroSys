@@ -14,7 +14,7 @@ ocupação/liberação e gestão de comandas).
 
 - **Runtime:** Node 22 + TypeScript
 - **HTTP:** Hono (`@hono/node-server`)
-- **Banco:** PostgreSQL 16 + Prisma 8 (RC) — contract em `src/prisma/contract.prisma`
+- **Banco:** PostgreSQL 16 + Drizzle ORM — schema em `src/db/schema.ts` e migrations em `drizzle/`
 - **Auth:** JWT (HS256, `hono/jwt`) com papéis
 - **Impressão:** ESC/POS renderizado no backend, fila persistida em `PrintJob`, drenada
   pelo daemon `printd` (Go, `apps/printd` — UI fina no `apps/desktop`; sistema autocontido,
@@ -31,8 +31,8 @@ comandos abaixo são executados **na raiz**:
 pnpm install
 cp apps/api/.env.example apps/api/.env   # DATABASE_URL, JWT_SECRET, PORT, CORS_ORIGIN
 
-pnpm contract:emit        # regenera contract.json / contract.d.ts do Prisma 8
-pnpm db:update            # aplica o schema no banco
+pnpm db:generate          # gera migrations a partir de src/db/schema.ts
+pnpm db:migrate           # aplica migrations usando a URL direta do Postgres
 pnpm seed                 # usuários, cardápio, impressoras, rotas, mesas 1–10
 
 pnpm dev                      # Next.js (3000), UI e API em /api/*
@@ -51,7 +51,8 @@ do pacote API; o Next.js recebe as variáveis do ambiente do projeto.
 
 | Variável        | Padrão                 | Descrição                                  |
 | --------------- | ---------------------- | ------------------------------------------ |
-| `DATABASE_URL`  | —                      | Postgres dev na porta **5433** (container `leandrosys-db`) |
+| `DATABASE_URL`  | —                      | URL de conexão usada pela API |
+| `DATABASE_URL_UNPOOLED` | —                | URL direta, sem pooler, usada para migrations Drizzle |
 | `JWT_SECRET`    | `dev-secret`           | Segredo HS256 (obrigatório em produção)    |
 | `PORT`          | `3001`                 | Porta apenas do Hono standalone            |
 | `CORS_ORIGIN`   | `http://localhost:3000`| Origem liberada pelo Hono standalone       |
@@ -407,8 +408,8 @@ Autenticação do cliente: login com o usuário `impressora` (ou qualquer papel 
 
 ## 6. Modelo de dados (resumo)
 
-`src/prisma/contract.prisma` é a fonte da verdade; `pnpm contract:emit` regenera
-`contract.json`/`contract.d.ts`.
+`src/db/schema.ts` é a fonte da verdade; `pnpm db:generate` cria migrations versionadas em
+`drizzle/`, e `pnpm db:migrate` as aplica usando `DATABASE_URL_UNPOOLED` quando disponível.
 
 - **User** `username` único · **Table** `number` único · **Category** · **Product**
   (`categoryId`, `price Decimal`) · **Aditional**

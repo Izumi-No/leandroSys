@@ -1,8 +1,7 @@
-import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../../prisma/types';
+import { desc, eq, inArray } from 'drizzle-orm';
+import type { DbLike } from '../../db';
+import { printJobs, printRoutes, printers } from '../../db/schema';
 import type { TicketDoc } from './escpos';
-
-export type DbLike = Kysely<Database> | Transaction<Database>;
 
 export type RoutedPrinter = {
   id: string;
@@ -43,15 +42,15 @@ const toRoutedPrinter = (row: RouteRow): RoutedPrinter | null =>
       }
     : null;
 
-const ROUTE_SELECTION = [
-  'PrintRoute.productId as productId',
-  'PrintRoute.categoryId as categoryId',
-  'Printer.id as printerId',
-  'Printer.name as printerName',
-  'Printer.columns as printerColumns',
-  'Printer.codepage as printerCodepage',
-  'Printer.active as printerActive',
-] as const;
+const routeSelection = {
+  productId: printRoutes.productId,
+  categoryId: printRoutes.categoryId,
+  printerId: printers.id,
+  printerName: printers.name,
+  printerColumns: printers.columns,
+  printerCodepage: printers.codepage,
+  printerActive: printers.active,
+};
 
 export async function loadRouteMaps(
   client: DbLike,
@@ -60,17 +59,15 @@ export async function loadRouteMaps(
 ): Promise<RouteMaps> {
   const products = [...new Set(productIds)];
   const categories = [...new Set(categoryIds)];
-
   const maps: RouteMaps = { byProduct: new Map(), byCategory: new Map() };
 
   if (products.length > 0) {
-    const routes: RouteRow[] = await client
-      .selectFrom('PrintRoute')
-      .innerJoin('Printer', 'Printer.id', 'PrintRoute.printerId')
-      .select(ROUTE_SELECTION)
-      .where('PrintRoute.productId', 'in', products)
-      .orderBy('PrintRoute.priority', 'desc')
-      .execute();
+    const routes = await client
+      .select(routeSelection)
+      .from(printRoutes)
+      .innerJoin(printers, eq(printers.id, printRoutes.printerId))
+      .where(inArray(printRoutes.productId, products))
+      .orderBy(desc(printRoutes.priority));
 
     for (const route of routes) {
       if (!route.productId) continue;
@@ -79,13 +76,12 @@ export async function loadRouteMaps(
   }
 
   if (categories.length > 0) {
-    const routes: RouteRow[] = await client
-      .selectFrom('PrintRoute')
-      .innerJoin('Printer', 'Printer.id', 'PrintRoute.printerId')
-      .select(ROUTE_SELECTION)
-      .where('PrintRoute.categoryId', 'in', categories)
-      .orderBy('PrintRoute.priority', 'desc')
-      .execute();
+    const routes = await client
+      .select(routeSelection)
+      .from(printRoutes)
+      .innerJoin(printers, eq(printers.id, printRoutes.printerId))
+      .where(inArray(printRoutes.categoryId, categories))
+      .orderBy(desc(printRoutes.priority));
 
     for (const route of routes) {
       if (!route.categoryId) continue;
@@ -109,8 +105,8 @@ export type EnqueueInput = {
 };
 
 export async function enqueueJob(client: DbLike, input: EnqueueInput): Promise<string> {
-  const job = await client
-    .insertInto('PrintJob')
+  const [job] = await client
+    .insert(printJobs)
     .values({
       printerId: input.printerId,
       comandaId: input.comandaId ?? null,
@@ -118,8 +114,7 @@ export async function enqueueJob(client: DbLike, input: EnqueueInput): Promise<s
       kind: input.kind,
       payload: input.payload,
     })
-    .returning('id')
-    .executeTakeFirst();
+    .returning({ id: printJobs.id });
   if (!job) throw new Error('Failed to enqueue print job');
   return job.id;
 }

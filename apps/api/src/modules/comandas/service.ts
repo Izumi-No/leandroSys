@@ -1,9 +1,9 @@
-import type { Selectable, Updateable } from 'kysely';
+import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { badRequest, conflict, notFound } from '../../lib/errors';
 import { money, round2, toNumber } from '../../lib/money';
-import { db } from '../../prisma/db';
-import type { Database } from '../../prisma/types';
-import { enqueueJob, loadRouteMaps, pickPrinters, type DbLike, type RoutedPrinter } from '../printing/queue';
+import type { AppDb, DbLike } from '../../db';
+import { aditionals, categories, comandas, comandaItemAditionals, comandaItems, diningTables, printers, products, users } from '../../db/schema';
+import { enqueueJob, loadRouteMaps, pickPrinters, type RoutedPrinter } from '../printing/queue';
 import { billTicket, itemsTicket, type TicketComanda, type TicketItem } from '../printing/tickets';
 
 export type ComandaStatus = 'OPEN' | 'PAYING' | 'CLOSED';
@@ -12,8 +12,8 @@ export type ItemStatus = 'PENDING' | 'SENT' | 'IN_PREP' | 'READY' | 'SERVED' | '
 
 type Money = string | number | { toString(): string };
 
-type ComandaRow = Selectable<Database['Comanda']>;
-type ComandaItemRow = Selectable<Database['ComandaItem']>;
+type ComandaRow = typeof comandas.$inferSelect;
+type ComandaItemRow = typeof comandaItems.$inferSelect;
 
 /** Campos que o cálculo de total precisa (produto não é obrigatório aqui). */
 type ItemTotalsLike = {
@@ -53,15 +53,14 @@ async function loadAditionalsByItem(client: DbLike, itemIds: string[]): Promise<
   if (itemIds.length === 0) return map;
 
   const links = await client
-    .selectFrom('ComandaItemAditional')
-    .selectAll()
-    .where('comandaItemId', 'in', itemIds)
-    .execute();
+    .select()
+    .from(comandaItemAditionals)
+    .where(inArray(comandaItemAditionals.comandaItemId, itemIds));
   if (links.length === 0) return map;
 
   const aditionalIds = [...new Set(links.map((link) => link.aditionalId))];
-  const aditionals = await client.selectFrom('Aditional').selectAll().where('id', 'in', aditionalIds).execute();
-  const byId = new Map(aditionals.map((aditional) => [aditional.id, aditional]));
+  const aditionalRows = await client.select().from(aditionals).where(inArray(aditionals.id, aditionalIds));
+  const byId = new Map(aditionalRows.map((aditional) => [aditional.id, aditional]));
 
   for (const link of links) {
     const aditional = byId.get(link.aditionalId);
@@ -82,22 +81,26 @@ type ItemFilter = {
 
 /** Itens de uma comanda com produto/categoria e adicionais resolvidos (sem N+1). */
 async function loadItems(client: DbLike, comandaId: string, filter: ItemFilter = {}): Promise<ComandaItemDetail[]> {
-  let query = client.selectFrom('ComandaItem').selectAll().where('comandaId', '=', comandaId);
-  if (filter.itemId) query = query.where('id', '=', filter.itemId);
-  if (filter.status) query = query.where('status', '=', filter.status);
-  if (filter.excludeCanceled) query = query.where('status', '!=', 'CANCELED');
+  const conditions = [eq(comandaItems.comandaId, comandaId)];
+  if (filter.itemId) conditions.push(eq(comandaItems.id, filter.itemId));
+  if (filter.status) conditions.push(eq(comandaItems.status, filter.status));
+  if (filter.excludeCanceled) conditions.push(ne(comandaItems.status, 'CANCELED'));
 
-  const items = await query.orderBy('createdAt', 'asc').execute();
+  const items = await client
+    .select()
+    .from(comandaItems)
+    .where(and(...conditions))
+    .orderBy(asc(comandaItems.createdAt));
   if (items.length === 0) return [];
 
   const productIds = [...new Set(items.map((item) => item.productId))];
-  const products = await client.selectFrom('Product').selectAll().where('id', 'in', productIds).execute();
+  const productRows = await client.select().from(products).where(inArray(products.id, productIds));
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId))];
-  const categories = await client.selectFrom('Category').selectAll().where('id', 'in', categoryIds).execute();
+  const categoryIds = [...new Set(productRows.map((product) => product.categoryId))];
+  const categoryRows = await client.select().from(categories).where(inArray(categories.id, categoryIds));
 
-  const byProduct = new Map(products.map((product) => [product.id, product]));
-  const byCategory = new Map(categories.map((category) => [category.id, category]));
+  const byProduct = new Map(productRows.map((product) => [product.id, product]));
+  const byCategory = new Map(categoryRows.map((category) => [category.id, category]));
   const aditionalsByItem = await loadAditionalsByItem(
     client,
     items.map((item) => item.id),
@@ -119,17 +122,19 @@ async function loadItems(client: DbLike, comandaId: string, filter: ItemFilter =
 }
 
 /** Comanda completa: tabela, atendente e itens com produto/adicionais. */
-export async function loadComanda(id: string): Promise<(ComandaRow & { items: ComandaItemDetail[] } & ComandaRelations) | undefined> {
-  const comanda = await db.selectFrom('Comanda').selectAll().where('id', '=', id).executeTakeFirst();
+export async function loadComanda(client: DbLike, id: string): Promise<(ComandaRow & { items: ComandaItemDetail[] } & ComandaRelations) | undefined> {
+  const [comanda] = await client.select().from(comandas).where(eq(comandas.id, id)).limit(1);
   if (!comanda) return undefined;
 
-  const [table, waiter, items] = await Promise.all([
-    db.selectFrom('Table').select(['id', 'number']).where('id', '=', comanda.tableId).executeTakeFirst(),
+  const [tableRows, waiterRows, items] = await Promise.all([
+    client.select({ id: diningTables.id, number: diningTables.number }).from(diningTables).where(eq(diningTables.id, comanda.tableId)).limit(1),
     comanda.waiterId
-      ? db.selectFrom('User').select(['id', 'username', 'role']).where('id', '=', comanda.waiterId).executeTakeFirst()
-      : Promise.resolve(undefined),
-    loadItems(db, id),
+      ? client.select({ id: users.id, username: users.username, role: users.role }).from(users).where(eq(users.id, comanda.waiterId)).limit(1)
+      : Promise.resolve([]),
+    loadItems(client, id),
   ]);
+  const table = tableRows[0];
+  const waiter = waiterRows[0];
 
   return {
     ...comanda,
@@ -140,41 +145,38 @@ export async function loadComanda(id: string): Promise<(ComandaRow & { items: Co
 }
 
 /** Lista de comandas (resumo), com tabela, atendente e contagem de itens. */
-export async function listComandas(status?: ComandaStatus) {
-  let query = db.selectFrom('Comanda').selectAll();
-  if (status) query = query.where('status', '=', status);
-  const comandas = await query.orderBy('openedAt', 'desc').execute();
-  if (comandas.length === 0) return [];
+export async function listComandas(client: DbLike, status?: ComandaStatus) {
+  const comandaRows = await client
+    .select()
+    .from(comandas)
+    .where(status ? eq(comandas.status, status) : undefined)
+    .orderBy(desc(comandas.openedAt));
+  if (comandaRows.length === 0) return [];
 
-  const tableIds = [...new Set(comandas.map((comanda) => comanda.tableId))];
-  const waiterIds = [...new Set(comandas.map((comanda) => comanda.waiterId).filter((id): id is string => !!id))];
+  const tableIds = [...new Set(comandaRows.map((comanda) => comanda.tableId))];
+  const waiterIds = [...new Set(comandaRows.map((comanda) => comanda.waiterId).filter((id): id is string => !!id))];
 
-  const [tables, waiters, items] = await Promise.all([
-    db.selectFrom('Table').select(['id', 'number']).where('id', 'in', tableIds).execute(),
+  const [tableRows, waiterRows, itemRows] = await Promise.all([
+    client.select({ id: diningTables.id, number: diningTables.number }).from(diningTables).where(inArray(diningTables.id, tableIds)),
     waiterIds.length > 0
-      ? db.selectFrom('User').select(['id', 'username', 'role']).where('id', 'in', waiterIds).execute()
+      ? client.select({ id: users.id, username: users.username, role: users.role }).from(users).where(inArray(users.id, waiterIds))
       : Promise.resolve([]),
-    db
-      .selectFrom('ComandaItem')
-      .select(['id', 'comandaId', 'status'])
-      .where(
-        'comandaId',
-        'in',
-        comandas.map((comanda) => comanda.id),
-      )
-      .execute(),
+    client
+      .select({ id: comandaItems.id, comandaId: comandaItems.comandaId, status: comandaItems.status })
+      .from(comandaItems)
+      .where(inArray(comandaItems.comandaId, comandaRows.map((comanda) => comanda.id))),
   ]);
 
-  const byTable = new Map(tables.map((table) => [table.id, table]));
-  const byWaiter = new Map(waiters.map((waiter) => [waiter.id, waiter]));
+  const byTable = new Map(tableRows.map((table) => [table.id, table]));
+  const byWaiter = new Map(waiterRows.map((waiter) => [waiter.id, waiter]));
   const itemsByComanda = new Map<string, { id: string; status: ItemStatus }[]>();
-  for (const item of items) {
+  for (const item of itemRows) {
     const list = itemsByComanda.get(item.comandaId) ?? [];
     list.push({ id: item.id, status: item.status });
     itemsByComanda.set(item.comandaId, list);
   }
 
-  return comandas.map((comanda) => ({
+  return comandaRows.map((comanda) => ({
     ...comanda,
     table: byTable.get(comanda.tableId) ?? { id: comanda.tableId, number: 0 },
     waiter: comanda.waiterId ? (byWaiter.get(comanda.waiterId) ?? null) : null,
@@ -267,7 +269,7 @@ export function serializeComandaDetail(row: ComandaDetailRow) {
 // ---------------------------------------------------------------------------
 
 async function recomputeTotal(client: DbLike, comandaId: string): Promise<number> {
-  const items = await client.selectFrom('ComandaItem').selectAll().where('comandaId', '=', comandaId).execute();
+  const items = await client.select().from(comandaItems).where(eq(comandaItems.comandaId, comandaId));
   const aditionalsByItem = await loadAditionalsByItem(
     client,
     items.map((item) => item.id),
@@ -283,7 +285,7 @@ async function recomputeTotal(client: DbLike, comandaId: string): Promise<number
     }, 0),
   );
 
-  await client.updateTable('Comanda').set({ total: total.toFixed(2) }).where('id', '=', comandaId).execute();
+  await client.update(comandas).set({ total: total.toFixed(2) }).where(eq(comandas.id, comandaId));
   return total;
 }
 
@@ -295,10 +297,10 @@ async function ticketContext(
   client: DbLike,
   comanda: { number: number; tableId: string; waiterId: string | null; openedAt: Date },
 ): Promise<TicketComanda> {
-  const table = await client.selectFrom('Table').select(['number']).where('id', '=', comanda.tableId).executeTakeFirst();
-  const waiter = comanda.waiterId
-    ? await client.selectFrom('User').select(['username']).where('id', '=', comanda.waiterId).executeTakeFirst()
-    : null;
+  const [table] = await client.select({ number: diningTables.number }).from(diningTables).where(eq(diningTables.id, comanda.tableId)).limit(1);
+  const [waiter] = comanda.waiterId
+    ? await client.select({ username: users.username }).from(users).where(eq(users.id, comanda.waiterId)).limit(1)
+    : [];
   return {
     number: comanda.number,
     tableNumber: table?.number ?? 0,
@@ -314,12 +316,11 @@ async function enqueueBill(
   warnings: string[],
   paymentMethod?: PaymentMethod | null,
 ): Promise<string | null> {
-  const printer = await client
-    .selectFrom('Printer')
-    .selectAll()
-    .where('printsBill', '=', true)
-    .where('active', '=', true)
-    .executeTakeFirst();
+  const [printer] = await client
+    .select()
+    .from(printers)
+    .where(and(eq(printers.printsBill, true), eq(printers.active, true)))
+    .limit(1);
 
   if (!printer) {
     warnings.push('Nenhuma impressora ativa configurada para contas');
@@ -347,24 +348,23 @@ async function enqueueBill(
 // Mutações
 // ---------------------------------------------------------------------------
 
-export async function openComanda(input: { tableId: string; waiterId?: string | null }): Promise<string> {
-  return db.transaction().execute(async (tx) => {
-    const table = await tx.selectFrom('Table').selectAll().where('id', '=', input.tableId).forUpdate().executeTakeFirst();
+export async function openComanda(client: AppDb, input: { tableId: string; waiterId?: string | null }): Promise<string> {
+  return client.transaction(async (tx) => {
+    const [table] = await tx.select().from(diningTables).where(eq(diningTables.id, input.tableId)).for('update').limit(1);
     if (!table) throw notFound('Mesa não encontrada');
     if (table.status === 'OCCUPIED') throw conflict('Mesa já está ocupada');
     if (table.status === 'RESERVED') throw conflict('Mesa reservada: cancele a reserva antes de ocupar');
 
-    const comanda = await tx
-      .insertInto('Comanda')
+    const [comanda] = await tx
+      .insert(comandas)
       .values({
         tableId: table.id,
         waiterId: input.waiterId ?? null,
         status: 'OPEN',
       })
-      .returning('id')
-      .executeTakeFirstOrThrow();
+      .returning({ id: comandas.id });
 
-    await tx.updateTable('Table').set({ status: 'OCCUPIED' }).where('id', '=', table.id).execute();
+    await tx.update(diningTables).set({ status: 'OCCUPIED' }).where(eq(diningTables.id, table.id));
     return comanda.id;
   });
 }
@@ -376,23 +376,23 @@ export type AddItemInput = {
   aditionalIds?: string[];
 };
 
-export async function addItem(comandaId: string, input: AddItemInput): Promise<string> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function addItem(client: AppDb, comandaId: string, input: AddItemInput): Promise<string> {
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status !== 'OPEN') throw conflict('Só é possível lançar itens em comanda aberta');
 
-    const product = await tx.selectFrom('Product').selectAll().where('id', '=', input.productId).executeTakeFirst();
+    const [product] = await tx.select().from(products).where(eq(products.id, input.productId)).limit(1);
     if (!product || !product.active) throw notFound('Produto não encontrado');
 
     const aditionalIds = [...new Set(input.aditionalIds ?? [])];
-    const aditionals = aditionalIds.length
-      ? await tx.selectFrom('Aditional').selectAll().where('id', 'in', aditionalIds).execute()
+    const aditionalRows = aditionalIds.length
+      ? await tx.select().from(aditionals).where(inArray(aditionals.id, aditionalIds))
       : [];
-    if (aditionals.length !== aditionalIds.length) throw notFound('Adicional não encontrado');
+    if (aditionalRows.length !== aditionalIds.length) throw notFound('Adicional não encontrado');
 
-    const item = await tx
-      .insertInto('ComandaItem')
+    const [item] = await tx
+      .insert(comandaItems)
       .values({
         comandaId,
         productId: product.id,
@@ -401,14 +401,12 @@ export async function addItem(comandaId: string, input: AddItemInput): Promise<s
         note: input.note ?? null,
         status: 'PENDING',
       })
-      .returning('id')
-      .executeTakeFirstOrThrow();
+      .returning({ id: comandaItems.id });
 
-    if (aditionals.length > 0) {
+    if (aditionalRows.length > 0) {
       await tx
-        .insertInto('ComandaItemAditional')
-        .values(aditionals.map((aditional) => ({ comandaItemId: item.id, aditionalId: aditional.id })))
-        .execute();
+        .insert(comandaItemAditionals)
+        .values(aditionalRows.map((aditional) => ({ comandaItemId: item.id, aditionalId: aditional.id })));
     }
 
     await recomputeTotal(tx, comandaId);
@@ -422,57 +420,55 @@ export type UpdateItemInput = {
   status?: 'IN_PREP' | 'READY' | 'SERVED';
 };
 
-export async function updateItem(comandaId: string, itemId: string, input: UpdateItemInput): Promise<void> {
-  await db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function updateItem(client: AppDb, comandaId: string, itemId: string, input: UpdateItemInput): Promise<void> {
+  await client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status !== 'OPEN') throw conflict('Comanda não está aberta');
 
-    const item = await tx
-      .selectFrom('ComandaItem')
-      .selectAll()
-      .where('id', '=', itemId)
-      .where('comandaId', '=', comandaId)
-      .executeTakeFirst();
+    const [item] = await tx
+      .select()
+      .from(comandaItems)
+      .where(and(eq(comandaItems.id, itemId), eq(comandaItems.comandaId, comandaId)))
+      .limit(1);
     if (!item) throw notFound('Item não encontrado');
     if (item.status === 'CANCELED') throw conflict('Item está cancelado');
 
-    const patch: Updateable<Database['ComandaItem']> = {};
+    const patch: Partial<typeof comandaItems.$inferInsert> = {};
     if (input.quantity !== undefined) patch.quantity = input.quantity;
     if (input.note !== undefined) patch.note = input.note;
     if (input.status !== undefined) patch.status = input.status;
     if (Object.keys(patch).length === 0) throw badRequest('Nada para atualizar');
 
-    await tx.updateTable('ComandaItem').set(patch).where('id', '=', itemId).execute();
+    await tx.update(comandaItems).set(patch).where(eq(comandaItems.id, itemId));
     if (input.quantity !== undefined) await recomputeTotal(tx, comandaId);
   });
 }
 
 /** Item pendente é apagado; item já enviado vira CANCELED (mantém o histórico). */
-export async function removeItem(comandaId: string, itemId: string): Promise<'REMOVED' | 'CANCELED'> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function removeItem(client: AppDb, comandaId: string, itemId: string): Promise<'REMOVED' | 'CANCELED'> {
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status !== 'OPEN') throw conflict('Comanda não está aberta');
 
-    const item = await tx
-      .selectFrom('ComandaItem')
-      .selectAll()
-      .where('id', '=', itemId)
-      .where('comandaId', '=', comandaId)
-      .executeTakeFirst();
+    const [item] = await tx
+      .select()
+      .from(comandaItems)
+      .where(and(eq(comandaItems.id, itemId), eq(comandaItems.comandaId, comandaId)))
+      .limit(1);
     if (!item) throw notFound('Item não encontrado');
 
     if (item.status === 'PENDING') {
-      await tx.deleteFrom('ComandaItemAditional').where('comandaItemId', '=', itemId).execute();
-      await tx.deleteFrom('ComandaItem').where('id', '=', itemId).execute();
+      await tx.delete(comandaItemAditionals).where(eq(comandaItemAditionals.comandaItemId, itemId));
+      await tx.delete(comandaItems).where(eq(comandaItems.id, itemId));
       await recomputeTotal(tx, comandaId);
       return 'REMOVED' as const;
     }
 
     if (item.status === 'CANCELED') throw conflict('Item já está cancelado');
 
-    await tx.updateTable('ComandaItem').set({ status: 'CANCELED' }).where('id', '=', itemId).execute();
+    await tx.update(comandaItems).set({ status: 'CANCELED' }).where(eq(comandaItems.id, itemId));
     await recomputeTotal(tx, comandaId);
     return 'CANCELED' as const;
   });
@@ -485,9 +481,9 @@ export type SendResult = {
 };
 
 /** Manda os itens PENDING para as impressoras das rotas (item vence categoria). */
-export async function sendComanda(comandaId: string): Promise<SendResult> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function sendComanda(client: AppDb, comandaId: string): Promise<SendResult> {
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status !== 'OPEN') throw conflict('Comanda não está aberta');
 
@@ -543,10 +539,9 @@ export async function sendComanda(comandaId: string): Promise<SendResult> {
 
     if (sentItems.size > 0) {
       await tx
-        .updateTable('ComandaItem')
+        .update(comandaItems)
         .set({ status: 'SENT' })
-        .where('id', 'in', [...sentItems])
-        .execute();
+        .where(inArray(comandaItems.id, [...sentItems]));
     }
 
     return { jobIds, sentItems: [...sentItems], unrouted };
@@ -554,9 +549,9 @@ export async function sendComanda(comandaId: string): Promise<SendResult> {
 }
 
 /** Reimprime um item específico (mesma rota do envio normal). */
-export async function reprintItem(comandaId: string, itemId: string): Promise<string[]> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function reprintItem(client: AppDb, comandaId: string, itemId: string): Promise<string[]> {
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status === 'CLOSED') throw conflict('Comanda já foi fechada');
 
@@ -588,16 +583,16 @@ export async function reprintItem(comandaId: string, itemId: string): Promise<st
 }
 
 /** OPEN -> PAYING e imprime a conta. Idempotente se já está em PAYING. */
-export async function checkoutComanda(comandaId: string): Promise<{ billJobId: string | null; warnings: string[] }> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function checkoutComanda(client: AppDb, comandaId: string): Promise<{ billJobId: string | null; warnings: string[] }> {
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status === 'CLOSED') throw conflict('Comanda já foi fechada');
     if (comanda.status === 'PAYING') return { billJobId: null, warnings: ['Comanda já está em pagamento'] };
 
     const warnings: string[] = [];
     const billJobId = await enqueueBill(tx, comanda, warnings);
-    await tx.updateTable('Comanda').set({ status: 'PAYING' }).where('id', '=', comandaId).execute();
+    await tx.update(comandas).set({ status: 'PAYING' }).where(eq(comandas.id, comandaId));
     await recomputeTotal(tx, comandaId);
 
     return { billJobId, warnings };
@@ -606,11 +601,12 @@ export async function checkoutComanda(comandaId: string): Promise<{ billJobId: s
 
 /** Fecha a comanda, imprime a conta (se ainda não foi) e libera a mesa. */
 export async function closeComanda(
+  client: AppDb,
   comandaId: string,
   paymentMethod?: PaymentMethod,
 ): Promise<{ billJobId: string | null; warnings: string[] }> {
-  return db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+  return client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status === 'CLOSED') throw conflict('Comanda já foi fechada');
 
@@ -618,11 +614,9 @@ export async function closeComanda(
     const billJobId = comanda.status === 'OPEN' ? await enqueueBill(tx, comanda, warnings) : null;
 
     const pending = await tx
-      .selectFrom('ComandaItem')
-      .select(['id'])
-      .where('comandaId', '=', comandaId)
-      .where('status', '=', 'PENDING')
-      .execute();
+      .select({ id: comandaItems.id })
+      .from(comandaItems)
+      .where(and(eq(comandaItems.comandaId, comandaId), eq(comandaItems.status, 'PENDING')));
     if (pending.length > 0) {
       warnings.push(`${pending.length} item(ns) nunca foi(ram) enviado(s) para impressão`);
     }
@@ -630,32 +624,31 @@ export async function closeComanda(
     const total = await recomputeTotal(tx, comandaId);
 
     await tx
-      .updateTable('Comanda')
+      .update(comandas)
       .set({
         status: 'CLOSED',
         closedAt: new Date(),
         paymentMethod: paymentMethod ?? null,
         total: total.toFixed(2),
       })
-      .where('id', '=', comandaId)
-      .execute();
-    await tx.updateTable('Table').set({ status: 'AVAILABLE' }).where('id', '=', comanda.tableId).execute();
+      .where(eq(comandas.id, comandaId));
+    await tx.update(diningTables).set({ status: 'AVAILABLE' }).where(eq(diningTables.id, comanda.tableId));
 
     return { billJobId, warnings };
   });
 }
 
 /** Apaga uma comanda aberta e sem itens (desfaz "pegar a mesa"). */
-export async function deleteComanda(comandaId: string): Promise<void> {
-  await db.transaction().execute(async (tx) => {
-    const comanda = await tx.selectFrom('Comanda').selectAll().where('id', '=', comandaId).forUpdate().executeTakeFirst();
+export async function deleteComanda(client: AppDb, comandaId: string): Promise<void> {
+  await client.transaction(async (tx) => {
+    const [comanda] = await tx.select().from(comandas).where(eq(comandas.id, comandaId)).for('update').limit(1);
     if (!comanda) throw notFound('Comanda não encontrada');
     if (comanda.status === 'CLOSED') throw conflict('Comanda já foi fechada');
 
-    const items = await tx.selectFrom('ComandaItem').select(['id']).where('comandaId', '=', comandaId).execute();
+    const items = await tx.select({ id: comandaItems.id }).from(comandaItems).where(eq(comandaItems.comandaId, comandaId));
     if (items.length > 0) throw conflict('Comanda possui itens; cancele os itens antes de apagar');
 
-    await tx.deleteFrom('Comanda').where('id', '=', comandaId).execute();
-    await tx.updateTable('Table').set({ status: 'AVAILABLE' }).where('id', '=', comanda.tableId).execute();
+    await tx.delete(comandas).where(eq(comandas.id, comandaId));
+    await tx.update(diningTables).set({ status: 'AVAILABLE' }).where(eq(diningTables.id, comanda.tableId));
   });
 }

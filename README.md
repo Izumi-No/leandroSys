@@ -10,7 +10,7 @@ Monorepo gerenciado com **pnpm workspaces**.
 ```
 leandroSys/
 ├── apps/
-│   ├── api/        # API Hono + Kysely/Neon (comandas, mesas, fila de impressão)
+│   ├── api/        # API Hono + Drizzle/Neon (comandas, mesas, fila de impressão)
 │   ├── web/        # App Next.js + React (salão, comandas, administrativo)
 │   ├── printd/     # Daemon Go: dono da fila (claim → transporte → ack) + API local
 │   └── desktop/    # Electron: só UI — cliente fino do printd
@@ -22,7 +22,7 @@ leandroSys/
 
 | Pacote                | Nome                  | O que é |
 | --------------------- | --------------------- | ------- |
-| `apps/api`            | `@leandrosys/api`     | Rotas Hono e domínio: Kysely/Neon, JWT, fila de jobs ESC/POS |
+| `apps/api`            | `@leandrosys/api`     | Rotas Hono e domínio: Drizzle/Neon, JWT, fila de jobs ESC/POS |
 | `apps/web`            | `@leandrosys/web`     | Next.js App Router + React 19; API same-origin em `/api/*` |
 | `apps/printd`         | `@leandrosys/printd`  | **Daemon em Go**: dono da fila — pareia as impressoras da casa (Bluetooth/rede) e drena todas as filas em paralelo; API local em `127.0.0.1` |
 | `apps/desktop`        | `@leandrosys/desktop` | Electron 45: **só UI do printd** — configuração (1x), pareamento simplificado, estado das impressoras e log |
@@ -41,8 +41,8 @@ pnpm build:all        # build de todos os pacotes (inclui o daemon Go)
 pnpm typecheck        # tsc --noEmit em todos os pacotes
 
 pnpm seed             # dados iniciais (veja tabela abaixo)
-pnpm db:update        # aplica o schema do Prisma
-pnpm contract:emit    # regenera contract.json / contract.d.ts
+pnpm db:generate      # gera migrations do schema Drizzle
+pnpm db:migrate       # aplica migrations ao banco
 ```
 
 Por pacote: `pnpm --filter ./apps/api dev` inicia o servidor Hono standalone em `:3001`; `pnpm --filter ./apps/web build` compila o Next.js. No fluxo principal, o Next.js monta a API Hono nas rotas `/api/*`, sem `API_ORIGIN` ou serviço HTTP separado.
@@ -53,7 +53,7 @@ Por pacote: `pnpm --filter ./apps/api dev` inicia o servidor Hono standalone em 
 pnpm install
 cp apps/api/.env.example apps/api/.env   # necessário para seed e Hono standalone
 docker start leandrosys-db               # Postgres dev (container de trabalho)
-pnpm db:update
+pnpm db:migrate
 pnpm seed
 pnpm dev
 ```
@@ -74,7 +74,7 @@ Usuários do seed: `admin/admin123`, `garcom/garcom123`, `caixa/caixa123`,
 - [`apps/desktop/README.md`](apps/desktop/README.md) — **UI da impressão** (Electron):
   cliente fino do `printd` — sobe o daemon se preciso, configuração única e pareamento
   com um campo.
-- `apps/api/prisma-8.md` — notas sobre Prisma 8 (contract, `db update`, codecs).
+- `apps/api/README.md` — instruções da API, schema Drizzle e migrations.
 
 Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG com
 `pnpm docs:build` (requer o [D2](https://d2lang.com) instalado).

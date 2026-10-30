@@ -6,7 +6,7 @@
   "exports": {
     "./app": "./src/app.ts"
   },
-  "description": "API de comandas, mesas e fila de impressão (Hono + Kysely + Neon)",
+  "description": "API de comandas, mesas e fila de impressão (Hono + Drizzle + Neon)",
   "scripts": {
     "build": "tsc",
     "deploy": "tsc && wrangler deploy",
@@ -15,21 +15,23 @@
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:ddl": "node scripts/gen-ddl.mjs",
-    "db:ddl:apply": "node scripts/apply-ddl.cjs",
-    "db:ddl:reset": "node scripts/clean-db.cjs && node scripts/apply-ddl.cjs",
-    "db:types": "node scripts/gen-types.cjs"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
+    "@neondatabase/serverless": "^1.2.0",
     "dotenv": "^18.0.9",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
     "iconv-lite": "^0.7.3",
-    "kysely": "^0.29.7",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "pg": "^8.23.1",
     "tsx": "^4.23.15",
     "vitest": "^5.0.5",
     "wrangler": "^4.153.0"

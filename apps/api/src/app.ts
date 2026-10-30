@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { env } from './env';
+import { databaseMiddleware } from './db/middleware';
 import type { AppEnv } from './lib/auth';
 import { errorResponse } from './lib/errors';
 import { authRoutes } from './modules/auth/routes';
@@ -20,6 +21,8 @@ export function createApp(): Hono<AppEnv> {
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     }),
   );
+
+  app.use('/api/*', databaseMiddleware);
 
   app.notFound((c) => c.json({ error: 'Rota não encontrada', code: 'NOT_FOUND' }, 404));
 

@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { sign, verify } from 'hono/jwt';
 import { env } from '../env';
+import type { AppDb } from '../db';
 import { forbidden, unauthorized } from './errors';
 
 export type Role = 'ADMIN' | 'WAITER' | 'CASHIER' | 'CHEF';
@@ -13,7 +14,10 @@ export type AuthUser = {
   role: Role;
 };
 
-export type AppEnv = { Variables: { user: AuthUser } };
+export type AppEnv = {
+  Bindings: { DATABASE_URL?: string };
+  Variables: { user: AuthUser; db: AppDb };
+};
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 dias
 

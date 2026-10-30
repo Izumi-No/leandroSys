@@ -12,7 +12,7 @@ await build({
   platform: 'browser',
   bundle: true,
   sourcemap: true,
-  external: ['@prisma/orm-postgres', 'pg', 'pg-pool'],
+  external: ['@neondatabase/serverless', 'pg', 'pg-pool'],
   target: 'es2022',
   define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'info',
