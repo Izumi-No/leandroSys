@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./app": "./src/app.ts"
+  },
   "description": "API de comandas, mesas e fila de impressão (Hono + Kysely + Neon)",
   "scripts": {
     "build": "tsc",

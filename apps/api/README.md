@@ -35,15 +35,17 @@ pnpm contract:emit        # regenera contract.json / contract.d.ts do Prisma 8
 pnpm db:update            # aplica o schema no banco
 pnpm seed                 # usuários, cardápio, impressoras, rotas, mesas 1–10
 
-pnpm dev                  # Next.js (3000) + API (3001) em paralelo
-pnpm --filter ./apps/api dev   # só a API, com watch
-pnpm start                # só a API, sem watch
-pnpm typecheck            # tsc --noEmit em todos os pacotes
+pnpm dev                      # Next.js (3000), UI e API em /api/*
+pnpm --filter ./apps/api dev  # Hono standalone (3001), opcional
+pnpm start                    # Next.js em produção
+pnpm --filter ./apps/api start # Hono standalone, sem watch
+pnpm typecheck                # tsc --noEmit em todos os pacotes
 ```
 
-Base URL: `http://localhost:3001/api` (porta via `PORT`).
-O `.env` fica em `apps/api/.env` e é lido a partir do diretório do pacote — rode os
-sempre via `pnpm` (o CWD de cada script é o do pacote correspondente).
+Base URL principal: `http://localhost:3000/api`, servida pelo Next.js. Se executar o Hono
+standalone com `pnpm --filter ./apps/api dev`, a base será `http://localhost:3001/api`
+(`PORT` controla apenas esse processo). O `.env` em `apps/api/.env` é usado pelos comandos
+do pacote API; o Next.js recebe as variáveis do ambiente do projeto.
 
 ### Variáveis de ambiente
 
@@ -51,8 +53,8 @@ sempre via `pnpm` (o CWD de cada script é o do pacote correspondente).
 | --------------- | ---------------------- | ------------------------------------------ |
 | `DATABASE_URL`  | —                      | Postgres dev na porta **5433** (container `leandrosys-db`) |
 | `JWT_SECRET`    | `dev-secret`           | Segredo HS256 (obrigatório em produção)    |
-| `PORT`          | `3001`                 | Porta da API                               |
-| `CORS_ORIGIN`   | `http://localhost:3000`| Origem liberada (Next.js)                  |
+| `PORT`          | `3001`                 | Porta apenas do Hono standalone            |
+| `CORS_ORIGIN`   | `http://localhost:3000`| Origem liberada pelo Hono standalone       |
 
 ### Seed (dados iniciais)
 
@@ -427,7 +429,7 @@ Enums: `TableStatus`, `ComandaStatus`, `PaymentMethod`, `ItemStatus`, `PrintJobK
 ## 7. Fluxo completo (exemplo)
 
 ```bash
-B=http://localhost:3001/api
+B=http://localhost:3000/api
 TK=$(curl -s -X POST $B/auth/login -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}' | jq -r .token)
 A="Authorization: Bearer $TK"
@@ -463,7 +465,7 @@ curl -s -X POST $B/comandas/$CID/close -H "$A" -H 'Content-Type: application/jso
 
 ## 8. Clientes no monorepo
 
-- `apps/web` — Next.js App Router (proxy `/api` → API em `:3001`): salão, comandas e administração.
+- `apps/web` — Next.js App Router; monta a aplicação Hono diretamente no Route Handler `/api/[...path]`, sem serviço remoto.
 - `apps/printd` — daemon Go que drena esta fila (`login → claim → ESC/POS/rede|RFCOMM → ack`);
   API local em `127.0.0.1` e pareamento simplificado ([`apps/printd/README.md`](../printd/README.md)).
 - `apps/desktop` — Electron: só a UI do `printd` ([`apps/desktop/README.md`](../desktop/README.md)).

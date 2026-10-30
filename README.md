@@ -22,8 +22,8 @@ leandroSys/
 
 | Pacote                | Nome                  | O que é |
 | --------------------- | --------------------- | ------- |
-| `apps/api`            | `@leandrosys/api`     | Backend: Hono, Kysely/Neon, JWT, fila de jobs ESC/POS |
-| `apps/web`            | `@leandrosys/web`     | Next.js App Router + React 19 (dev em `http://localhost:3000`, proxy `/api` → `3001`) |
+| `apps/api`            | `@leandrosys/api`     | Rotas Hono e domínio: Kysely/Neon, JWT, fila de jobs ESC/POS |
+| `apps/web`            | `@leandrosys/web`     | Next.js App Router + React 19; API same-origin em `/api/*` |
 | `apps/printd`         | `@leandrosys/printd`  | **Daemon em Go**: dono da fila — pareia as impressoras da casa (Bluetooth/rede) e drena todas as filas em paralelo; API local em `127.0.0.1` |
 | `apps/desktop`        | `@leandrosys/desktop` | Electron 45: **só UI do printd** — configuração (1x), pareamento simplificado, estado das impressoras e log |
 | `packages/shared`     | `@leandrosys/shared`  | DTOs e enums espelhados da API (fonte TS direta, sem build) |
@@ -33,10 +33,11 @@ leandroSys/
 ```bash
 pnpm install          # instala todos os pacotes e linka o workspace
 
-pnpm dev              # Next.js (3000) + API Hono (3001) em paralelo
+pnpm dev              # Next.js (3000), incluindo as rotas /api/*
 pnpm dev:desktop      # build + Electron
-pnpm dev:all          # tudo junto (API + web + Electron)
-pnpm build            # build de todos os pacotes
+pnpm dev:all          # todos os serviços e aplicações em paralelo
+pnpm build            # build de produção do Next.js
+pnpm build:all        # build de todos os pacotes (inclui o daemon Go)
 pnpm typecheck        # tsc --noEmit em todos os pacotes
 
 pnpm seed             # dados iniciais (veja tabela abaixo)
@@ -44,13 +45,13 @@ pnpm db:update        # aplica o schema do Prisma
 pnpm contract:emit    # regenera contract.json / contract.d.ts
 ```
 
-Por pacote: `pnpm --filter ./apps/api dev`, `pnpm --filter ./apps/web build`, etc. O deploy da API continua no Cloudflare; configure a raiz do projeto Vercel como `apps/web` para publicar o Next.js e defina `API_ORIGIN` com a origem HTTP(S) da API (sem o caminho `/api`).
+Por pacote: `pnpm --filter ./apps/api dev` inicia o servidor Hono standalone em `:3001`; `pnpm --filter ./apps/web build` compila o Next.js. No fluxo principal, o Next.js monta a API Hono nas rotas `/api/*`, sem `API_ORIGIN` ou serviço HTTP separado.
 
 ## Primeira execução
 
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env   # DATABASE_URL (dev: porta 5433), JWT_SECRET…
+cp apps/api/.env.example apps/api/.env   # necessário para seed e Hono standalone
 docker start leandrosys-db               # Postgres dev (container de trabalho)
 pnpm db:update
 pnpm seed
@@ -95,7 +96,7 @@ Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG
 ### Frontend (`apps/web`)
 
 - Next.js App Router + React 19 hospeda o sistema; as telas existentes mantêm React Router durante a migração gradual. Tailwind v4 e tokens em `src/styles.css`; componentes shadcn/ui em `src/components/ui`.
-- O Route Handler `/api/[...path]` encaminha chamadas same-origin para a API Hono, preservando os headers de autorização e os contratos. Em desenvolvimento usa `http://127.0.0.1:3001`; em produção configure `API_ORIGIN`.
+- O Route Handler `/api/[...path]` executa a aplicação Hono dentro do Next.js, preservando autenticação, contratos e lógica de domínio. As rotas são same-origin em desenvolvimento e produção; não é necessário configurar `API_ORIGIN`.
 - Dados via SWR; o cliente em `src/lib/api.ts` mantém o contrato de erros `{ error, code, details }` e o Bearer do JWT.
 - Rotas: `/login`, `/` (salão), `/comandas`, `/comandas/:id` e `/admin/*` (ADMIN).
 - Comandos: `pnpm --filter ./apps/web dev`, `build`, `typecheck`.

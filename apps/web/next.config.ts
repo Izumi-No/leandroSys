@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@leandrosys/shared'],
+  transpilePackages: ['@leandrosys/api', '@leandrosys/shared'],
   async headers() {
     return [
       {

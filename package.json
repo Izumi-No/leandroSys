@@ -5,10 +5,10 @@
   "description": "Comandas e mesas com filas de impressão — monorepo (api, web, desktop)",
   "packageManager": "pnpm@10.20.0",
   "scripts": {
-    "dev": "pnpm --filter ./apps/api --filter ./apps/web --parallel dev",
+    "dev": "pnpm --filter @leandrosys/web dev",
     "build": "pnpm --filter @leandrosys/web build",
     "build:all": "pnpm -r build",
-    "start": "pnpm --filter ./apps/api start",
+    "start": "pnpm --filter @leandrosys/web start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "seed": "pnpm --filter ./apps/api seed",
