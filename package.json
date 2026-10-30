@@ -13,9 +13,7 @@
     "seed": "pnpm --filter ./apps/api seed",
     "contract:emit": "pnpm --filter ./apps/api contract:emit",
     "db:update": "pnpm --filter ./apps/api db:update",
-    "deploy:api": "cd apps/api && pnpm run publish",
-    "deploy:web": "cd apps/web && pnpm run publish",
-    "deploy:all": "pnpm run deploy:api && pnpm run deploy:web",
+    "deploy:api": "cd apps/api && pnpm run deploy",
     "docs:build": "for f in docs/diagrams/*.d2; do d2 \"$f\" \"${f%.d2}.svg\" || exit 1; done",
     "dev:desktop": "pnpm --filter ./apps/desktop dev",
     "dev:all": "pnpm -r --parallel dev"

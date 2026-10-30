@@ -9,6 +9,7 @@ import type { Database } from '../../prisma/types';
 import { parseTicketDoc, renderTicketBase64 } from '../printing/escpos';
 import { enqueueJob } from '../printing/queue';
 import { testTicket } from '../printing/tickets';
+import { claimSchema } from './claim-contract';
 
 /** Três tentativas antes do job ficar FAILED (vira de novo PENDING no erro). */
 const MAX_ATTEMPTS = 3;
@@ -43,12 +44,6 @@ const createRouteSchema = z
     message: 'Informe exatamente um alvo: productId OU categoryId',
     path: ['productId'],
   });
-
-const claimSchema = z.object({
-  printerId: z.uuid(),
-  agentId: z.string().min(6).max(64),
-  limit: z.number().int().min(1).max(32).optional(),
-});
 
 /** Atrela uma fila já cadastrada a um dispositivo descoberto pelo printd. */
 const attachSchema = z.object({

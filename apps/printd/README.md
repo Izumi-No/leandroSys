@@ -127,7 +127,7 @@ token de 16 bytes e modo `0600`):
   "token": "…",
   "agenteId": "b3f1c2…",
   "agenteNome": "cozinha-pc",
-  "apiUrl": "http://localhost:3000/api",
+  "apiUrl": "http://localhost:3001/api",
   "usuario": "impressora",
   "senha": "impressora123",
   "impressoras": [ { "id": "…", "nome": "Cozinha 1", "endereco": "192.168.0.10:9100", "transporte": "NETWORK", "colunas": 32, "codepage": 19 } ]
@@ -151,7 +151,7 @@ resposta nem agir — e o Electron lê o token do arquivo (mesmo usuário do dis
 ## 6. Smoke E2E (sem interface)
 
 ```bash
-# API em http://localhost:3000/api com seed aplicado
+# API em http://localhost:3001/api com seed aplicado
 pnpm --filter @leandrosys/printd smoke
 ```
 

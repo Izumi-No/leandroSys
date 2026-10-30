@@ -1,7 +1,7 @@
-/** URL da API usada pelos clientes (web usa proxy do Vite; desktop fala direto). */
-export const DEFAULT_API_URL = 'http://localhost:3000/api';
+/** URL local da API usada pelo desktop e daemon de impressão. */
+export const DEFAULT_API_URL = 'http://localhost:3001/api';
 
-/** Caminho relativo usado pelo Vite para o proxy em dev (`/api` -> `http://localhost:3000`). */
+/** Caminho same-origin encaminhado pelo proxy Route Handler do Next.js. */
 export const API_BASE_PATH = '/api';
 
 /** Intervalo sugerido entre claims quando a fila está vazia (ms). */

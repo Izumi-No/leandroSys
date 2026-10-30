@@ -5,11 +5,11 @@
 # Serviços
 # ---------------------------------------------------------------------------
 
-# Sube a API (porta 3000) em background.
+# Sube a API (porta 3001) em background.
 start-api:
     nohup pnpm --filter @leandrosys/api start > /tmp/opencode/api.log 2>&1 &
     sleep 5
-    curl -s http://localhost:3000/api/health
+    curl -s http://localhost:3001/api/health
 
 # Sube o daemon printd (porta 7411) em background.
 start-daemon:
@@ -96,8 +96,8 @@ desktop:
 # Mostra o estado atual dos serviços e do banco.
 status:
     echo "=== API ==="
-    curl -s http://localhost:3000/api/health || echo "offline"
+    curl -s http://localhost:3001/api/health || echo "offline"
     echo "=== Daemon ==="
     curl -s -H 'X-Printd-Token: 56c03dbde4594f142c9346979ee3d6db' http://localhost:7411/estado | head -c 200 || echo "offline"
     echo "=== Portas ==="
-    ss -ltn | grep -E ':3000|:7411' || echo "nenhuma"
+    ss -ltn | grep -E ':3001|:7411' || echo "nenhuma"

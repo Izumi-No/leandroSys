@@ -136,7 +136,7 @@ function renderizar(estado: EstadoDaemon | null): void {
 
 function preencherConfig(config: EstadoDaemon['config']): void {
   const campos: Record<string, string> = {
-    apiUrl: config.apiUrl || 'http://localhost:3000/api',
+    apiUrl: config.apiUrl || 'http://localhost:3001/api',
     usuario: config.usuario || 'impressora',
     senha: config.senha,
   };

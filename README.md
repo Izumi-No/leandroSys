@@ -10,8 +10,8 @@ Monorepo gerenciado com **pnpm workspaces**.
 ```
 leandroSys/
 ├── apps/
-│   ├── api/        # API Hono + Prisma 8 (comandas, mesas, fila de impressão)
-│   ├── web/        # Frontend React + Vite (salão, comandas, administrativo)
+│   ├── api/        # API Hono + Kysely/Neon (comandas, mesas, fila de impressão)
+│   ├── web/        # App Next.js + React (salão, comandas, administrativo)
 │   ├── printd/     # Daemon Go: dono da fila (claim → transporte → ack) + API local
 │   └── desktop/    # Electron: só UI — cliente fino do printd
 ├── packages/
@@ -22,8 +22,8 @@ leandroSys/
 
 | Pacote                | Nome                  | O que é |
 | --------------------- | --------------------- | ------- |
-| `apps/api`            | `@leandrosys/api`     | Backend: Hono, Prisma 8, JWT, fila de jobs ESC/POS |
-| `apps/web`            | `@leandrosys/web`     | Vite + React 19 (dev em `http://localhost:5173`, proxy `/api` → `3000`) |
+| `apps/api`            | `@leandrosys/api`     | Backend: Hono, Kysely/Neon, JWT, fila de jobs ESC/POS |
+| `apps/web`            | `@leandrosys/web`     | Next.js App Router + React 19 (dev em `http://localhost:3000`, proxy `/api` → `3001`) |
 | `apps/printd`         | `@leandrosys/printd`  | **Daemon em Go**: dono da fila — pareia as impressoras da casa (Bluetooth/rede) e drena todas as filas em paralelo; API local em `127.0.0.1` |
 | `apps/desktop`        | `@leandrosys/desktop` | Electron 45: **só UI do printd** — configuração (1x), pareamento simplificado, estado das impressoras e log |
 | `packages/shared`     | `@leandrosys/shared`  | DTOs e enums espelhados da API (fonte TS direta, sem build) |
@@ -33,7 +33,7 @@ leandroSys/
 ```bash
 pnpm install          # instala todos os pacotes e linka o workspace
 
-pnpm dev              # API (3000) + web (5173) em paralelo
+pnpm dev              # Next.js (3000) + API Hono (3001) em paralelo
 pnpm dev:desktop      # build + Electron
 pnpm dev:all          # tudo junto (API + web + Electron)
 pnpm build            # build de todos os pacotes
@@ -44,7 +44,7 @@ pnpm db:update        # aplica o schema do Prisma
 pnpm contract:emit    # regenera contract.json / contract.d.ts
 ```
 
-Por pacote: `pnpm --filter ./apps/api dev`, `pnpm --filter ./apps/web build`, etc.
+Por pacote: `pnpm --filter ./apps/api dev`, `pnpm --filter ./apps/web build`, etc. O deploy da API continua no Cloudflare; configure a raiz do projeto Vercel como `apps/web` para publicar o Next.js e defina `API_ORIGIN` com a origem HTTP(S) da API (sem o caminho `/api`).
 
 ## Primeira execução
 
@@ -73,7 +73,7 @@ Usuários do seed: `admin/admin123`, `garcom/garcom123`, `caixa/caixa123`,
 - [`apps/desktop/README.md`](apps/desktop/README.md) — **UI da impressão** (Electron):
   cliente fino do `printd` — sobe o daemon se preciso, configuração única e pareamento
   com um campo.
-- `apps/api/prisma-8.md` — notas sobre Prisma 8 (contract, `db update`, codecs).
+- `apps/api/README.md` — endpoints, contrato de erros e motor de impressão.
 
 Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG com
 `pnpm docs:build` (requer o [D2](https://d2lang.com) instalado).
@@ -94,9 +94,8 @@ Os diagramas têm fonte D2 em [`docs/diagrams/`](docs/diagrams); regenere os SVG
 
 ### Frontend (`apps/web`)
 
-- Vite + React 19 + React Router + **Tailwind v4** com tokens de design em
-  `src/styles.css` + componentes **shadcn/ui** (`src/components/ui`, alias `@/*`).
-- Dados via **SWR** (`fetcher` em `src/lib/api.ts`, que também trata o contrato de erros
-  `{ error, code, details }` e o Bearer do JWT em `localStorage`).
+- Next.js App Router + React 19 hospeda o sistema; as telas existentes mantêm React Router durante a migração gradual. Tailwind v4 e tokens em `src/styles.css`; componentes shadcn/ui em `src/components/ui`.
+- O Route Handler `/api/[...path]` encaminha chamadas same-origin para a API Hono, preservando os headers de autorização e os contratos. Em desenvolvimento usa `http://127.0.0.1:3001`; em produção configure `API_ORIGIN`.
+- Dados via SWR; o cliente em `src/lib/api.ts` mantém o contrato de erros `{ error, code, details }` e o Bearer do JWT.
 - Rotas: `/login`, `/` (salão), `/comandas`, `/comandas/:id` e `/admin/*` (ADMIN).
-- Comandos: `pnpm --filter ./apps/web dev` (proxy `/api` → 3000), `build`, `typecheck`.
+- Comandos: `pnpm --filter ./apps/web dev`, `build`, `typecheck`.

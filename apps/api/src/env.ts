@@ -6,7 +6,7 @@ const int = (value: string | undefined, fallback: number): number => {
 };
 
 export const env = {
-  port: int(process.env['PORT'], 3000),
+  port: int(process.env['PORT'], 3001),
   jwtSecret: process.env['JWT_SECRET'] ?? 'dev-secret',
-  corsOrigin: process.env['CORS_ORIGIN'] ?? 'http://localhost:5173',
+  corsOrigin: process.env['CORS_ORIGIN'] ?? 'http://localhost:3000',
 };
